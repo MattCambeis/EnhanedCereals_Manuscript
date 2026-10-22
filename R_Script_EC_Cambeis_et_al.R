@@ -1,7 +1,7 @@
 #This is the Script for the analysis of 16S rRNA data in the manuscript: 
-#Bacterial quorum sensing molecule functions as postbiotics and modifies barley physiology in a microbial community-dependent manner
+#Bacterial quorum sensing molecule functions as postbiotics and modifies barley immune status in a responsive genotype
 #By Cambeis et al. 2026
-#Submitted to Enivormental Microbiome
+#Submitted to Discover Agriculture
 
 #Path to data have to be adjusted!!
 
