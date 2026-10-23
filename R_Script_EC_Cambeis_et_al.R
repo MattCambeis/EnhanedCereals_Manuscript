@@ -4,14 +4,97 @@
 #Submitted to Discover Agriculture
 
 #Path to data have to be adjusted!!
+#Explainations: JKI = field soil; FE = potting substrate
 
+#Whole analysis was based on dada2 tutorial by Benjamin Callahan 
+#https://benjjneb.github.io/dada2/tutorial.html
+#and by Hauschild et. al 
+#https://github.com/krishauschi/ORDIAmur_ms2/tree/main/scripts/microbiome/16S_rRNA_amplicon
+#I really appreciate it!
+#Additionally, the writing of the script was improved by the use of different LLMs
+
+# load packgaes -----------------------------------------------------------
+
+pacman::p_load(
+  broom,
+  conflicted,
+  here,
+  janitor,
+  writexl, 
+  naniar,
+  readxl,
+  tidyverse,
+  corrr,
+  MetBrewer,
+  pheatmap,
+  ggpattern,
+  psych,
+  conflicted,
+  desplot,
+  emmeans,
+  ggtext,
+  MetBrewer,
+  multcomp,
+  multcompView,
+  conflicted,
+  here,
+  naniar,
+  rstatix,
+  ggpubr,
+  ggtext,
+  rstatix, 
+  corrr,
+  vegan,
+  ggpmisc,
+  factoextra,
+  ggfortify, 
+  openxlsx2, 
+  knitr,
+  reshape, 
+  viridis,
+  microbiome,
+  phyloseq,
+  dada2,
+  stringr,
+  patchwork,
+  forcats,
+  ggrepel,
+  ggh4x
+  
+)
+
+
+
+
+# handle function conflicts
+conflict_prefer("filter", "dplyr") 
+conflict_prefer("select", "dplyr")
+
+out_dir<-"/Out" # Adjust!
+
+
+# my_theme ----------------------------------------------------------------
+
+my_theme <-  theme(
+  legend.text = element_text(size = 14, colour = "black"),
+  axis.title.x = element_text(colour = "black", size = 14),
+  axis.title.y = element_text( size = 14, colour = "black"),
+  axis.text.x = element_text(vjust = 0.5, size = 14, colour = "black"),
+  axis.text.y = element_text(vjust = 0.5, size = 14, colour = "black"),
+  axis.line = element_line(colour = "black"),
+  panel.background = element_blank(),
+  plot.title = element_text(size = 14, color = "#000", hjust = 0.5),
+  panel.grid.major = element_blank(),
+  panel.grid.minor = element_blank(),
+  legend.title = element_text(size = 14, face = "bold", colour = "black")  # Legend title
+)
 
 # DADA2 -------------------------------------------------------------------
 library(dada2)
 packageVersion("dada2")
 
 # Set Path
-data_path <- "~/CleanData_fq"
+data_path <- file.path(data_dir, "CleanData_fq")####Adjust path to your personal clean data; For this analysis the cleaned Paired-End reads were used.
 list.files(data_path)
 
 # List all forward and reverse read files
@@ -63,19 +146,19 @@ getN <- function(x) sum(getUniques(x))
 track <- cbind(out, sapply(dadaFs, getN), sapply(dadaRs, getN), sapply(mergers, getN), rowSums(seqtab.nochim))
 colnames(track) <- c("input", "filtered", "denoisedF", "denoisedR", "merged", "nonchim")
 rownames(track) <- sample.names
-write.table(track, "16S_ReadProcessing_Tracking.txt", sep="\t", quote=FALSE)
+write.table(track, file.path(out_dir, "16S_ReadProcessing_Tracking.txt"), sep="\t", quote=FALSE)
 
 # Assign taxonomy using SILVA database
-taxa_silva <- assignTaxonomy(seqtab.nochim, "silva_nr99_v138.1_wSpecies_train_set.fa.gz", multithread=TRUE)
-write.table(taxa_silva, "16S_Taxonomy_Silva.txt", sep="\t", quote=FALSE)
+taxa_silva <- assignTaxonomy(seqtab.nochim, file.path(data_dir, "silva_nr99_v138.1_wSpecies_train_set.fa.gz"), multithread=TRUE) ### SILVA v138.1 training set; Download at the SILVA homepage
+write.table(taxa_silva, file.path(out_dir, "16S_Taxonomy_Silva.txt"), sep="\t", quote=FALSE)
 
 # Save ASV table
 asvtable_count <- t(seqtab.nochim)
 head(asvtable_count)
-write.table(asvtable_count, "16S_ASVcount.txt", sep="\t", quote=FALSE)
+write.table(asvtable_count, file.path(out_dir, "16S_ASVcount.txt"), sep="\t", quote=FALSE)
 
 
-asvtable_count <- read.table("16S_ASVcount.txt", header=T, sep="\t", dec=".", row.names=1 ) # samples in columns, no tax info; check.names false to accept my sample names
+asvtable_count <- read.table(file.path(out_dir, "16S_ASVcount.txt"), header=T, sep="\t", dec=".", row.names=1 ) # samples in columns, no tax info; check.names false to accept my sample names
 dim(asvtable_count)
 ncol(asvtable_count)
 nrow(asvtable_count)
@@ -87,62 +170,9 @@ sum(is.na(asvtable_count))
 
 
 #Phyloseq----
-###create phyloseq objects from files----
-pacman::p_load(
-  broom,
-  conflicted,
-  here,
-  janitor,
-  writexl, 
-  naniar,
-  readxl,
-  tidyverse,
-  corrr,
-  MetBrewer,
-  pheatmap,
-  ggpattern,
-  psych,
-  conflicted,
-  desplot,
-  emmeans,
-  ggtext,
-  MetBrewer,
-  multcomp,
-  multcompView,
-  conflicted,
-  here,
-  naniar,
-  readxl,
-  rstatix,
-  ggpubr,
-  ggtext,
-  rstatix, 
-  corrr,
-  vegan,
-  ggpmisc,
-  factoextra,
-  ggfortify, 
-  openxlsx2, 
-  knitr,
-  reshape, 
-  viridis,
-  microbiome,
-  phyloseq
-  
-)
-
-
-# handle function conflicts
-conflict_prefer("filter", "dplyr") 
-conflict_prefer("select", "dplyr")
-
-out_dir<-"/Out" # Adjust!
-
-
-##### phyloseq object ---------------------------------------------------------
 
 #ASV-count-table
-asv_count <- read.table("16S_ASVcount.txt", header=T, sep="\t", dec=".", row.names=1 ) ##incl.ASV-names AND sample-names
+asv_count <- read.table(file.path(out_dir, "16S_ASVcount.txt"), header=T, sep="\t", dec=".", row.names=1 ) ##incl.ASV-names AND sample-names
 #Check dimensions
 dim(asv_count)
 ncol(asv_count)
@@ -153,15 +183,19 @@ rownames(asv_count)[1:5]  # Show first 5 ASV IDs
 sum(is.na(asv_count))
 
 #Taxonomy-table with asv-names matching asv_count
-tax <- read.table("16S_Taxonomy_Silva.txt", header=T, sep="\t", dec=".", row.names=1 ) ##incl.ASV-names
+tax <- read.table(file.path(out_dir, "16S_Taxonomy_Silva.txt"), header=T, sep="\t", dec=".", row.names=1 ) ##incl.ASV-names
 #Check if import was successfull and dataframe is correct
 ncol(tax)
 nrow(tax)
 colnames(tax)
 rownames(tax)[1:5] 
 
-#Metadata
-metadata <- read.table("Metadata.txt", header=T, sep="\t", dec=".", row.names=1, fileEncoding="ISO-8859-1")
+#Metadata       
+#Adjust Metadata to your personal data; 
+#In case of the data of the study, metadata is provided in the repository
+#It contains ID	Number	Source	Microhabitat	Genotype	Treatment	C6-HSL	Soil	Duration for all the 88 Samples
+
+metadata <- read.table(file.path(data_dir, "Metadata.txt"), header=T, sep="\t", dec=".", row.names=1, fileEncoding="ISO-8859-1")
 #Check if import was successfull and dataframe is formated as the others
 ncol(metadata)
 nrow(metadata)
@@ -203,10 +237,9 @@ dim(tax_table(physeq_numbered))
 
 str(physeq)
 str(physeq_numbered)
-#überschreiben der originalen phyloseq datei
 physeq<- numbered.ASVs(physeq)
 
-# Clean phyloseq ----------------------------------------------------------
+## Clean phyloseq ----------------------------------------------------------
 
 ##Basis of the script is by Hauschild et. al https://github.com/krishauschi/ORDIAmur_ms2/tree/main/scripts/microbiome/16S_rRNA_amplicon
 #Modification by MattCambeis 
@@ -258,7 +291,7 @@ prevdf = apply(X = otu_table(physeq),
 #Add taxonomy and total reads counts to the data frame
 prevdf = data.frame(Prevalence=prevdf, TotalAbundance = taxa_sums(physeq), tax_table(physeq), otu_table(physeq))
 #Write data frame in csv format
-write.csv(prevdf, "prevdf_physeq.csv")
+write.csv(prevdf, file.path(out_dir, "prevdf_physeq.csv"))
 
 
 cat("Number of ASVs:", ntaxa(physeq), "\n")
@@ -266,16 +299,7 @@ cat("Number of samples:", nsamples(physeq), "\n")
 cat("Average reads per sample:", mean(sample_sums(physeq)), "\n")
 
 
-# Rename_NAs --------------------------------------------------------------
-
-
-#now we have a phyloseq object that was cleaned from missassigned taxa. As next step, go to "16S_rename_NAs" to fill missing taxonimic information.
-
-#input is the phyloseq object that was created using the script "16S_create_phyloseq_object.R"
-#Load packages
-library("phyloseq")
-library("stringr")
-
+## Rename_NAs --------------------------------------------------------------
 
 # Export tax table
 tax <- data.frame(phyloseq::tax_table(physeq))
@@ -319,18 +343,10 @@ head(phyloseq::tax_table(physeq))
 tail(phyloseq::tax_table(physeq))
 physeq
 
-#this is the phyloseq object with taxonomy information for all ranks. It includes raw count data and will be the input object for differential abundance analysis. For this, go to script "16S_ANCOM-BC2.R"
 
 
-# Rarefaction -------------------------------------------------------------
+## Rarefaction -------------------------------------------------------------
 
-
-#Create rarefied data and rarefaction curve using the phyloseq object from script "ITS_rename_NAs.R"  
-
-library("phyloseq")
-library("dplyr")
-library("tidyverse")
-library("vegan")
 
 #rarefaction
 otu.rare = otu_table(physeq)
@@ -350,7 +366,6 @@ n_asvs
 median_reads <- median(rowSums(otu.rare))
 median_reads
 
-library(vegan)
 
 rarecurve(otu.rare, step = 1000, cex = 0.6, label = TRUE)
 
@@ -387,23 +402,13 @@ physeq_raref = rarefy_even_depth(physeq, rngseed=1, sample.size=21707
 
 ###export data frame
 df_physeq_raref <- data.frame(tax_table(physeq_raref),otu_table(physeq_raref)) ### Create tables
-write.csv(df_physeq_raref, "df_physeq_raref.csv")
+write.csv(df_physeq_raref, file.path(out_dir, "df_physeq_raref.csv"))
 
 df_physeq_raref
-#this is the phyloseq object containing count data that will be used for all subsequent analyses, except for differential abundance testing.
-#For the next steps, go to the diversity scripts "16S_shannon.Rmd" for alpha-diversity and "16S_ordination.R" for beta-diversity.
-
 
 
 # MDS -----------------------------------------------------
-
-library(patchwork)
-library(phyloseq)
-library(ggplot2)
-library(dplyr)
-library(forcats)
-
-
+## Field soil --------------------------------------------------------------
 #JKI
 # Subset rhizosphere samples
 physeq_raref_JKI <- subset_samples(physeq_raref, Soil == "Field soil")
@@ -478,13 +483,7 @@ for (d in durations) {
   
   # Run MDS
   ord <- ordinate(physeq_sub, method = "NMDS", distance = "bray")
-  
-  # # Optional: percent variation explained
-  # eig <- ord$values$Eigenvalues
-  # percent_explained <- round(eig / sum(eig) * 100, 1)
-  # xlab <- paste0("Axis 1 (", percent_explained[1], "%)")
-  # ylab <- paste0("Axis 2 (", percent_explained[2], "%)")
-  
+
   # Plot
   p <- plot_ordination(physeq_sub, ord, type = "samples", 
                        shape = "Genotype", color = "Genotype_Treatment") +
@@ -626,6 +625,9 @@ ggsave(
 
 
 
+## potting substrate -------------------------------------------------------
+
+
 # FE
 
 # Subset rhizosphere samples
@@ -701,12 +703,7 @@ for (d in durations) {
   # Run MDS
   ord <- ordinate(physeq_sub, method = "NMDS", distance = "bray")
   
-  # # Optional: percent variation explained
-  # eig <- ord$values$Eigenvalues
-  # percent_explained <- round(eig / sum(eig) * 100, 1)
-  # xlab <- paste0("Axis 1 (", percent_explained[1], "%)")
-  # ylab <- paste0("Axis 2 (", percent_explained[2], "%)")
-  # 
+
   # Plot
   p <- plot_ordination(physeq_sub, ord, type = "samples", 
                        shape = "Genotype", color = "Genotype_Treatment") +
@@ -858,6 +855,87 @@ ggsave(
   path = out_dir# resolution (300 dpi = publication quality)
 )
 
+## MDS Control different soils ---------------------------------------
+
+# Subset rhizosphere samples
+physeq_raref_GP <- subset_samples(physeq_raref, Microhabitat == "RZ")
+
+# Remove taxa that are zero *within the subset*
+physeq_raref_GP <- prune_taxa(
+  taxa_sums(physeq_raref_GP) > 0,
+  physeq_raref_GP
+)
+
+
+# Extract sample_data as a data.frame
+samp_df <- data.frame(sample_data(physeq_raref_GP))
+
+# Make sure the relevant columns are factors
+samp_df$Treatment <- as.factor(samp_df$Treatment)
+samp_df$Genotype  <- as.factor(samp_df$Genotype)
+samp_df$Duration  <- as.factor(samp_df$Duration)
+samp_df$Soil  <- as.factor(samp_df$Soil)
+
+# Reorder factor levels
+samp_df <- samp_df %>%
+  mutate(
+    Treatment = fct_relevel(Treatment, "mock", "C6-HSL"),
+    Genotype = fct_relevel(Genotype, "Golden_Promise", "BCC436"),
+    Soil = fct_relevel(Soil, "Substrate", "Field soil"),
+    Duration = fct_relevel(Duration, "Two-week-old", "16-week-old", "Three-week-old","18-week-old")
+  )
+
+
+
+samp_df <- samp_df %>%
+  mutate(
+    Timepoint = case_when(
+      Duration %in% c("Two-week-old", "Three-week-old")   ~ "Sampling Time Point 1",
+      Duration %in% c("16-week-old", "18-week-old") ~ "Sampling Time Point 2",
+      TRUE                                             ~ NA_character_
+    )
+  )
+
+# Put it back into phyloseq object
+sample_data(physeq_raref_GP) <- sample_data(samp_df)
+durations <- unique(sample_data(physeq_raref_GP)$Duration)
+
+
+# Run MDS
+ord <- ordinate(physeq_raref_GP, method = "MDS", distance = "bray")
+
+# Plot
+plot_ordination(physeq_raref_GP, ord, type = "Sample", shape = "Genotype", color = "Treatment",) + 
+  geom_point(size = 5.5, alpha = 0.5, stroke = 0) +
+  #stat_ellipse(aes(color = Duration, group = Duration)) + 
+  theme_bw() +
+  theme(axis.text = element_text(size = 13, color = "black"),
+        axis.title = element_text(size = 13, color = "black"),
+        legend.title = element_text(size = 13, color = "black"),
+        legend.text = element_text(size = 13, color = "black"),
+        strip.text = element_text(
+          size = 13,
+          colour = "black",
+          face = "bold"
+        )) +
+  scale_color_manual(values = c( "#B48E6A",  "#601700")) +
+  facet_grid(Soil ~ Timepoint)
+
+
+
+file_name <- paste0("MDS/MDS_Abschluss.png")
+
+ggsave(
+  filename = file_name,
+  plot = last_plot(),
+  width = 22,       # width in cm
+  height = 15,      # height in cm
+  units = "cm",     # specify centimeters
+  dpi = 300,
+  path = out_dir# resolution (300 dpi = publication quality)
+)
+
+
 
 
 # PERMANOVA ---------------------------------------------------------------
@@ -868,75 +946,9 @@ library(pairwiseAdonis)
 library(microbiome)
 
 
-#Substrate
-# permanova on sqrt-count data
-physeq_raref_FE_wo_bulk <- subset_samples(physeq_raref_FE, Microhabitat == "RZ")
 
-# Metadata extrahieren
-metadata <- as(sample_data(physeq_raref_JKI_wo_bulk), "data.frame")
-
-# Ergebnisse vorbereiten
-global_results <- list()
-pairwise_results <- list()
-
-for (d in unique(metadata$Duration)) {
-  
-  message(">>> Duration: ", d)
-  
-  # Subset Metadata
-  metadata_d <- metadata[metadata$Duration == d, ]
-  
-  # Subset Phyloseq
-  physeq_d <- prune_samples(rownames(metadata_d), physeq_raref_JKI_wo_bulk)
-  
-  # Distanzmatrix (z. B. Bray-Curtis)
-  bray_dist <- phyloseq::distance(physeq_d, method = "bray")
-  
-  # --- Globale PERMANOVA ---
-  adonis_res <- adonis2(bray_dist ~ Treatment * Genotype,
-                        data = metadata_d,
-                        permutations = 10000,
-                        by = "terms",
-                        strata = metadata_d$strata_combined)
-  
-  global_results[[d]] <- adonis_res
-  
-  # --- Pairwise Post-hoc ---
-  # Treatment
-  pairwise_results[[paste0("Treatment_", d)]] <- 
-    pairwise.adonis(as.matrix(bray_dist), metadata_d$Treatment, 
-                    perm = 9999, p.adjust.m = "fdr")
-  
-  # Genotype
-  pairwise_results[[paste0("Genotype_", d)]] <- 
-    pairwise.adonis(as.matrix(bray_dist), metadata_d$Genotype, 
-                    perm = 9999, p.adjust.m = "fdr")
-}
-
-# Ergebnisse als Dataframes zusammenfassen
-global_df <- do.call(rbind, lapply(names(global_results), function(d) {
-  res <- as.data.frame(global_results[[d]])
-  res$Duration <- d
-  res$Factor <- rownames(res)
-  res
-}))
-
-pairwise_df <- do.call(rbind, lapply(names(pairwise_results), function(name) {
-  res <- pairwise_results[[name]]
-  res$ComparisonType <- name
-  res
-}))
-
-
-
-
-
-
+##Field soil ------------------------------------------------------------
 ##JKI
-
-library(vegan)
-library(pairwiseAdonis)
-library(microbiome)
 
 
 physeq_raref_JKI_wo_bulk <- subset_samples(physeq_raref_JKI, Microhabitat == "RZ")
@@ -1053,15 +1065,14 @@ addWorksheet(wb, "Treatment_per_Genotype")
 writeData(wb, "Treatment_per_Genotype", treatment_per_genotype_df)
 
 # Speichern
-saveWorkbook(wb, "PERMANOVA_results.xlsx", overwrite = TRUE)
+saveWorkbook(wb, file.path(out_dir, "PERMANOVA_results.xlsx"), overwrite = TRUE)
 
 
+
+## potting substrate -------------------------------------------------------
 
 ##FE
 
-library(vegan)
-library(pairwiseAdonis)
-library(microbiome)
 
 # Metadata extrahieren
 metadata <- as(sample_data(physeq_raref_FE_wo_bulk), "data.frame")
@@ -1175,19 +1186,14 @@ addWorksheet(wb, "Treatment_per_Genotype")
 writeData(wb, "Treatment_per_Genotype", treatment_per_genotype_df)
 
 # Speichern
-saveWorkbook(wb, "PERMANOVA_results_FE.xlsx", overwrite = TRUE)
+saveWorkbook(wb, file.path(out_dir, "PERMANOVA_results_FE.xlsx"), overwrite = TRUE)
 
 
-# global
+
+
+## Global ------------------------------------------------------------------
 
 # Subset rhizosphere samples
-
-
-
-library(vegan)
-library(pairwiseAdonis)
-library(microbiome)
-
 
 physeq_raref_wo_bulk <- subset_samples(physeq_raref, Microhabitat == "RZ")
 
@@ -1236,536 +1242,7 @@ writeData(wb, "Global_PERMANOVA", adonis_df)
 
 
 # Speichern
-saveWorkbook(wb, "global_PERMANOVA.xlsx", overwrite = TRUE)
-
-
-# Relative abundance ------------------------------------------------------
-library(ggh4x)
-#relative abundance on phylum level
-PS_phyl <- tax_glom(physeq_raref, "Phylum")  ##phylum level
-PS_phyl_rel <- transform_sample_counts(PS_phyl, function(x) x/sum(x))  ##transform to relabu
-PS_phyl_rel <-prune_taxa(taxa_sums(PS_phyl_rel) >0 , PS_phyl_rel) 
-PS_phyl_rel <- filter_taxa(PS_phyl_rel, 
-                           function(x) mean(x) >= 0.01, 
-                           prune = TRUE)
-
-#relative abundance on class level
-PS_cl <- tax_glom(physeq_raref, "Class")  ##Class level
-PS_cl_rel <- transform_sample_counts(PS_cl, function(x) x/sum(x))  ##transform to relabu
-PS_cl_rel <-prune_taxa(taxa_sums(PS_cl_rel) >0 , PS_cl_rel) 
-
-PS_cl_rel <- filter_taxa(PS_cl_rel, 
-                         function(x) mean(x) >= 0.01, 
-                         prune = TRUE)  
-
-
-# Relative Abundance Phylum ----------------------------------------------------------------
-
-
-#create data.frame for plotting
-relabu_phyla <- psmelt(PS_phyl_rel) #create data.frame for plotting
-relabu_phyla$Abundance <- relabu_phyla$Abundance * 100
-
-
-# Order phyla by total abundance
-phyla_order <- relabu_phyla %>%
-  group_by(Phylum) %>%
-  summarise(total = sum(Abundance, na.rm=TRUE)) %>%
-  arrange(desc(total)) %>%
-  pull(Phylum)
-
-# Set factor levels
-relabu_phyla$Phylum <- factor(relabu_phyla$Phylum, levels = phyla_order)
-
-ggplot(relabu_phyla, aes(x = Number, y = Abundance, fill = Phylum, group = Number)) +
-  theme_bw() +
-  labs(title = "Relative Abundance", x = "", y = "Relative Abundance (%)", fill="") +
-  geom_bar(position="fill", stat = "identity") +
-  facet_nested(~ Soil + Duration +Genotype +  Microhabitat + Treatment,
-               scales = "free_x", space = "free") + 
-  scale_fill_viridis_d()+
-  scale_y_continuous(labels = function(x) x * 100, expand = c(0,0))+
-  theme(
-    plot.title=element_text(color="black",size = 12, hjust=0, vjust = 2, face= "bold"),
-    plot.title.position = "panel",
-    strip.text = element_text(size = 10, face = "plain"),
-    strip.background = element_rect(fill = "white", color = "black"),
-    strip.placement = "outside",
-    axis.text.x = element_blank(), 
-    axis.title.y = element_text(size = 10, face = "plain"),  
-    legend.text = element_text(size = 10, face = "plain", colour = "black"),
-    axis.text.y = element_text(colour = "black", size = 7, face = "plain"),
-    axis.title.x =element_text(size = 10, face = "plain"))
-
-
-#nur JKI soil + Ungeordnet
-#mit 0 days und bulk
-PS_JKIS_phyl_rel <- subset_samples(PS_phyl_rel, Soil == "Field soil")
-
-relabu_phyla_JKIS <- psmelt(PS_JKIS_phyl_rel) #create data.frame for plotting
-
-
-
-relabu_phyla_JKIS$Abundance <- relabu_phyla_JKIS$Abundance * 100
-
-ggplot(relabu_phyla_JKIS, aes(x = Number, y = Abundance, fill = Phylum, group = Number)) +
-  theme_bw() +
-  labs(title = "Relative Abundance", x = "", y = "Relative Abundance (%)", fill="") +
-  geom_bar(position="fill", stat = "identity") +
-  facet_nested(~  Duration +Genotype +  Microhabitat + Treatment,
-               scales = "free_x", space = "free") + 
-  scale_fill_viridis_d()+
-  scale_y_continuous(labels = function(x) x * 100, expand = c(0,0))+
-  theme(
-    plot.title=element_text(color="black",size = 12, hjust=0, vjust = 2, face= "bold"),
-    plot.title.position = "panel",
-    strip.text = element_text(size = 10, face = "plain"),
-    strip.background = element_rect(fill = "white", color = "black"),
-    strip.placement = "outside",
-    axis.text.x = element_blank(), 
-    axis.title.y = element_text(size = 10, face = "plain"),  
-    legend.text = element_text(size = 10, face = "plain", colour = "black"),
-    axis.text.y = element_text(colour = "black", size = 7, face = "plain"),
-    axis.title.x =element_text(size = 10, face = "plain"))
-
-
-#nur JKI soil + GEORDNET
-#ohne 0 days  bulk
-
-
-relabu_phyla_JKIS_wo_0_bulk <- relabu_phyla_JKIS %>%
-  filter(Duration != "Zero-day")
-
-relabu_phyla_JKIS_wo_0_bulk<- relabu_phyla_JKIS_wo_0_bulk %>%   
-  mutate(Treatment = as_factor(Treatment)) %>% 
-  mutate(Genotype = as_factor(Genotype)) %>% 
-  mutate(Duration   = as_factor(Duration  )) %>% 
-  mutate(Treatment = fct_relevel(Treatment, "none", "mock", "C6-HSL")) %>% 
-  mutate(Genotype = fct_relevel(Genotype, "none","Golden_Promise", "BCC436")) %>% 
-  mutate(Duration   = fct_relevel(Duration  , "Three-week-old","18-week-old"))
-
-
-ggplot(relabu_phyla_JKIS_wo_0_bulk, aes(x = Number, y = Abundance, fill = Phylum, group = Number)) +
-  theme_bw() +
-  labs(title = "Relative Abundance", x = "", y = "Relative Abundance (%)", fill="") +
-  geom_bar(position="fill", stat = "identity") +
-  facet_nested(~  Duration +Genotype +  Microhabitat + Treatment,
-               scales = "free_x", space = "free") + 
-  scale_fill_viridis_d()+
-  scale_y_continuous(labels = function(x) x * 100, expand = c(0,0))+
-  theme(
-    plot.title=element_text(color="black",size = 12, hjust=0, vjust = 2, face= "bold"),
-    plot.title.position = "panel",
-    strip.text = element_text(size = 10, face = "bold"),
-    strip.background = element_rect(colour = "white"),
-    #strip.background = element_rect(fill = "white", color = "black"),
-    strip.placement = "outside",
-    axis.text.x = element_blank(), 
-    axis.title.y = element_text(size = 10, face = "plain"),  
-    legend.text = element_text(size = 10, face = "plain", colour = "black"),
-    axis.text.y = element_text(colour = "black", size = 7, face = "plain"),
-    axis.title.x =element_text(size = 10, face = "plain"))
-
-
-
-#nur FE soil + GEORDNET
-#ohne 0 days  bulk
-
-PS_FE_phyl_rel <- subset_samples(PS_phyl_rel, Soil == "Substrate")
-
-relabu_phyla_FE <- psmelt(PS_FE_phyl_rel) #create data.frame for plotting
-relabu_phyla_FE$Abundance <- relabu_phyla_FE$Abundance * 100
-
-relabu_phyla_FE_wo_0_bulk <- relabu_phyla_FE %>%
-  filter(Duration != "Zero-day")
-
-relabu_phyla_FE_wo_0_bulk<- relabu_phyla_FE_wo_0_bulk %>%   
-  mutate(Treatment = as_factor(Treatment)) %>% 
-  mutate(Genotype = as_factor(Genotype)) %>% 
-  mutate(Duration   = as_factor(Duration  )) %>% 
-  mutate(Treatment = fct_relevel(Treatment, "none", "mock", "C6-HSL")) %>% 
-  mutate(Genotype = fct_relevel(Genotype, "none","Golden_Promise", "BCC436")) %>% 
-  mutate(Duration   = fct_relevel(Duration  , "Two-week-old","16-week-old"))
-
-# Order phyla by total abundance
-phyla_order <- relabu_phyla_FE_wo_0_bulk %>%
-  group_by(Phylum) %>%
-  summarise(total = sum(Abundance, na.rm=TRUE)) %>%
-  arrange(desc(total)) %>%
-  pull(Phylum)
-
-# Set factor levels
-relabu_phyla_FE_wo_0_bulk$Phylum <- factor(relabu_phyla_FE_wo_0_bulk$Phylum, levels = phyla_order)
-
-relabu_phyla_FE_wo_0_bulk <- relabu_phyla_FE_wo_0_bulk %>%
-  arrange(Number, factor(Phylum, levels = phyla_order))
-
-
-
-
-ggplot(relabu_phyla_FE_wo_0_bulk, aes(x = Number, y = Abundance, fill = Phylum, group = Number)) +
-  theme_bw() +
-  labs(title = "Relative Abundance", x = "", y = "Relative Abundance (%)", fill="") +
-  geom_bar(position="fill", stat = "identity") +
-  facet_nested(~  Duration +Microhabitat  +Genotype +   Treatment,
-               scales = "free_x", space = "free") + 
-  scale_fill_viridis_d(option = "cividis")+
-  scale_y_continuous(labels = function(x) x * 100, expand = c(0,0))+
-  theme(
-    plot.title=element_text(color="black",size = 10, hjust=0, vjust = 2, face= "bold"),
-    plot.title.position = "panel",
-    strip.text = element_text(size = 10, face = "bold"),
-    strip.background = element_rect(fill = "white", color = "black", linewidth = 1),
-    strip.placement = "outside",
-    axis.text.x = element_blank(), 
-    axis.title.y = element_text(size = 10, face = "plain"),  
-    legend.text = element_text(size = 10, face = "plain", colour = "black"),
-    axis.text.y = element_text(colour = "black", size = 7, face = "plain"),
-    axis.title.x =element_text(size = 10, face = "plain"))
-
-
-file_name <- paste0("RA/RA_Phylum_FE.png")
-
-ggsave(
-  filename = file_name,
-  plot = last_plot(),
-  width = 22,       # width in cm
-  height = 15,      # height in cm
-  units = "cm",     # specify centimeters
-  dpi = 300,
-  path = out_dir# resolution (300 dpi = publication quality)
-)
-
-
-
-
-# Relative Abundance Class -------------------------------------------------------------------
-
-
-#create data.frame for plotting
-relabu_class <- psmelt(PS_cl_rel) #create data.frame for plotting
-relabu_class$Abundance <- relabu_class$Abundance * 100
-
-#nur JKI soil + GEORDNET
-#ohne 0 days  bulk
-PS_JKIS_phyl_class <- subset_samples(PS_cl_rel, Soil == "Field soil")
-
-relabu_class_JKIS <- psmelt(PS_JKIS_phyl_class) #create data.frame for plotting
-
-relabu_class_JKIS$Abundance <- relabu_class_JKIS$Abundance * 100
-
-
-relabu_class_JKIS_wo_0_bulk <- relabu_class_JKIS %>%
-  filter(Duration != "Zero-day")
-
-relabu_class_JKIS_wo_0_bulk<- relabu_class_JKIS_wo_0_bulk %>%   
-  mutate(Treatment = as_factor(Treatment)) %>% 
-  mutate(Genotype = as_factor(Genotype)) %>% 
-  mutate(Duration   = as_factor(Duration  )) %>% 
-  mutate(Treatment = fct_relevel(Treatment, "none", "mock", "C6-HSL")) %>% 
-  mutate(Genotype = fct_relevel(Genotype, "none","Golden_Promise", "BCC436")) %>% 
-  mutate(Duration   = fct_relevel(Duration  , "Three-week-old","18-week-old"))
-
-
-ggplot(relabu_class_JKIS_wo_0_bulk, aes(x = Number, y = Abundance, fill = Class, group = Number)) +
-  theme_bw() +
-  labs(title = "Relative Abundance", x = "", y = "Relative Abundance (%)", fill="") +
-  geom_bar(position="fill", stat = "identity") +
-  facet_nested(~  Duration +Genotype +  Microhabitat + Treatment,
-               scales = "free_x", space = "free") + 
-  scale_fill_viridis_d(option = "plasma")+
-  scale_y_continuous(labels = function(x) x * 100, expand = c(0,0))+
-  theme(
-    plot.title=element_text(color="black",size = 12, hjust=0, vjust = 2, face= "bold"),
-    plot.title.position = "panel",
-    strip.text = element_text(size = 10, face = "bold"),
-    strip.background = element_rect(colour = "white"),
-    #strip.background = element_rect(fill = "white", color = "black"),
-    strip.placement = "outside",
-    axis.text.x = element_blank(), 
-    axis.title.y = element_text(size = 10, face = "plain"),  
-    legend.text = element_text(size = 10, face = "plain", colour = "black"),
-    axis.text.y = element_text(colour = "black", size = 7, face = "plain"),
-    axis.title.x =element_text(size = 10, face = "plain"))
-
-
-
-#nur FE soil + GEORDNET
-#ohne 0 days  bulk
-PS_FE_phyl_class <- subset_samples(PS_cl_rel, Soil == "Substrate")
-
-relabu_class_FE <- psmelt(PS_FE_phyl_class) #create data.frame for plotting
-
-relabu_class_FE$Abundance <- relabu_class_FE$Abundance * 100
-
-
-relabu_class_FE_wo_0_bulk <- relabu_class_FE %>%
-  filter(Duration != "Zero-day")
-
-relabu_class_FE_wo_0_bulk<- relabu_class_FE_wo_0_bulk %>%   
-  mutate(Treatment = as_factor(Treatment)) %>% 
-  mutate(Genotype = as_factor(Genotype)) %>% 
-  mutate(Duration   = as_factor(Duration  )) %>% 
-  mutate(Treatment = fct_relevel(Treatment, "none", "mock", "C6-HSL")) %>% 
-  mutate(Genotype = fct_relevel(Genotype, "none","Golden_Promise", "BCC436")) %>% 
-  mutate(Duration   = fct_relevel(Duration  , "Two-week-old","16-week-old"))
-
-# Order phyla by total abundance
-class_order <- relabu_class_FE_wo_0_bulk %>%
-  group_by(Class) %>%
-  summarise(total = sum(Abundance, na.rm=TRUE)) %>%
-  arrange(desc(total)) %>%
-  pull(Class)
-
-# Set factor levels
-relabu_class_FE_wo_0_bulk$Class <- factor(relabu_class_FE_wo_0_bulk$Class, levels = class_order)
-
-relabu_class_FE_wo_0_bulk <- relabu_class_FE_wo_0_bulk %>%
-  arrange(Number, factor(Class, levels = class_order))
-
-
-
-ggplot(relabu_class_FE_wo_0_bulk, aes(x = Number, y = Abundance, fill = Class, group = Number)) +
-  theme_bw() +
-  labs(title = "Relative Abundance", x = "", y = "Relative Abundance (%)", fill="") +
-  geom_bar(position="fill", stat = "identity") +
-  facet_nested(~  Duration+Microhabitat +Genotype + Treatment,
-               scales = "free_x", space = "free") + 
-  scale_fill_viridis_d(option = "plasma")+
-  scale_y_continuous(labels = function(x) x * 100, expand = c(0,0))+
-  theme(
-    plot.title=element_text(color="black",size = 10, hjust=0, vjust = 2, face= "bold"),
-    plot.title.position = "panel",
-    strip.text = element_text(size = 10, face = "bold"),
-    strip.background = element_rect(fill = "white", color = "black", linewidth = 1),
-    strip.placement = "outside",
-    axis.text.x = element_blank(), 
-    axis.title.y = element_text(size = 10, face = "plain"),  
-    legend.text = element_text(size = 10, face = "plain", colour = "black"),
-    axis.text.y = element_text(colour = "black", size = 7, face = "plain"),
-    axis.title.x =element_text(size = 10, face = "plain"))
-
-
-
-file_name <- paste0("RA/RA_Class_FE.png")
-
-ggsave(
-  filename = file_name,
-  plot = last_plot(),
-  width = 22,       # width in cm
-  height = 15,      # height in cm
-  units = "cm",     # specify centimeters
-  dpi = 300,
-  path = out_dir# resolution (300 dpi = publication quality)
-)
-
-
-# TOP 10 most abundance ---------------------------------------------------
-
-
-library(phyloseq)
-library(dplyr)
-library(tibble)
-
-# Agglomerate to Genus level
-ps_spec <- tax_glom(physeq_raref_FE_wo_bulk, "Species")
-
-# Transform to relative abundance
-ps_spec_rel <- transform_sample_counts(ps_spec, function(x) x / sum(x))
-ps_spec_rel <-prune_taxa(taxa_sums(ps_spec_rel) >0 , ps_spec_rel) # -> Entfernt **alle Taxa**, die in der gesamten Tabelle nur Nullen haben. 
-# (Also „tote“/nie beobachtete Taxa, Summen = 0).
-
-ps_spec_rel <- filter_taxa(ps_spec_rel, 
-                           function(x) mean(x) >= 0.01, 
-                           prune = TRUE)  # Diese Zeile behält nur die Taxa, deren mittlere relative Abundanz 
-# über alle Samples hinweg ≥ 1 % ist.
-# -> Alles darunter wird entfernt.
-
-
-# Melt phyloseq to long format
-melted <- psmelt(ps_spec_rel)  # Already at genus level, relative abundance
-melted$Abundance <- melted$Abundance * 100
-
-
-top10_per_group <- melted %>%
-  group_by(Duration,Genotype,  Treatment, Species) %>%
-  summarise(Abundance = mean(Abundance), .groups = "drop") %>%
-  arrange(Genotype, Duration, Treatment, desc(Abundance)) %>%
-  group_by(Genotype, Duration, Treatment) %>%
-  slice_max(order_by = Abundance, n = 10, with_ties = FALSE)
-
-# Liste aller relevanten Species behalten
-species_keep <- unique(top10_per_group$Species)
-
-# Filtere dein melted-Objekt auf diese Species
-melted_top <- melted %>%
-  filter(Species %in% species_keep)
-
-melted_top<- melted_top %>%   
-  mutate(Treatment = as_factor(Treatment)) %>% 
-  mutate(Genotype = as_factor(Genotype)) %>% 
-  mutate(Duration   = as_factor(Duration  )) %>% 
-  mutate(Treatment = fct_relevel(Treatment,  "mock", "C6-HSL")) %>% 
-  mutate(Genotype = fct_relevel(Genotype, "Golden_Promise", "BCC436")) %>% 
-  mutate(Duration   = fct_relevel(Duration  , "Two-week-old","16-week-old"))
-
-
-
-ggplot(melted_top, aes(
-  x = Sample, 
-  y = OTU, 
-  fill = interaction(Genotype, Treatment, sep = "."),
-  alpha = Abundance
-)) +
-  geom_tile(color = "white") +
-  scale_fill_manual(
-    name = "Genotype × Treatment",
-    values = c(
-      "Golden_Promise.mock"   = "#A67C00",
-      "Golden_Promise.C6-HSL" = "#ffcf40",
-      "BCC436.mock"           = "#4F7942",
-      "BCC436.C6-HSL"         = "#4aba91"
-    ),
-    labels = c(
-      "Golden_Promise.mock" = "Golden Promise + mock",
-      "Golden_Promise.C6-HSL" = "Golden Promise + C6-HSL",
-      "BCC436.mock" = "BCC436 + mock",
-      "BCC436.C6-HSL" = "BCC436 + C6-HSL"
-    ),
-    breaks =   c(
-      "Golden_Promise.mock" ,
-      "Golden_Promise.C6-HSL" ,
-      "BCC436.mock" ,
-      "BCC436.C6-HSL" 
-    )
-  ) +
-  scale_alpha_continuous(
-    name = "Rel. Abundance [%]",
-    range = c(0.1, 1)   # 0.1 = sehr blass, 1 = volle Sättigung
-  ) +
-  scale_x_discrete(expand = c(0,0)) +
-  scale_y_discrete(expand = c(0,0))+
-  facet_nested(~ Duration + Genotype + Treatment, scales = "free_x") +
-  theme(
-    axis.title.x  = element_blank(),
-    axis.text.x   = element_blank(),
-    axis.ticks.x  = element_blank(),
-    panel.grid.major = element_blank(),
-    panel.grid.minor = element_blank()
-  ) +
-  labs(
-    title = "Top 10 Most Abundant ASV per Group",
-    x = "Sample",
-    y = "ASV"
-  )
-
-
-
-
-#Tabelle für unten drunter
-tab1<-melted_top %>% 
-  select(OTU, Phylum,Order,Family,Genus,Species) %>%
-  distinct()  # entfernt Duplikate
-
-
-
-
-
-top10_per_group <- melted %>%
-  group_by(Duration, Genotype, Treatment, OTU) %>%
-  summarise(Abundance = mean(Abundance), .groups = "drop") %>%
-  arrange(Genotype, Duration, Treatment, desc(Abundance)) %>%
-  group_by(Genotype, Duration, Treatment) %>%
-  slice_max(order_by = Abundance, n = 10, with_ties = FALSE)
-
-OTU_keep <- unique(top10_per_group$OTU)
-
-melted_top <- melted %>%
-  filter(OTU %in% OTU_keep)
-
-
-melted_top<- melted_top %>%   
-  mutate(Treatment = as_factor(Treatment)) %>% 
-  mutate(Genotype = as_factor(Genotype)) %>% 
-  mutate(Duration   = as_factor(Duration  )) %>% 
-  mutate(Treatment = fct_relevel(Treatment,  "mock", "C6-HSL")) %>% 
-  mutate(Genotype = fct_relevel(Genotype, "Golden_Promise", "BCC436")) %>% 
-  mutate(Duration   = fct_relevel(Duration  , "Two-week-old","16-week-old"))
-
-
-ggplot(melted_top, aes(
-  x = Sample, 
-  y = OTU, 
-  fill = interaction(Genotype, Treatment, sep = "."),
-  alpha = Abundance
-)) +
-  geom_tile(color = "white") +
-  scale_fill_manual(
-    name = "Genotype & Treatment",
-    values = c(
-      "Golden_Promise.mock"   = "#A67C00",
-      "Golden_Promise.C6-HSL" = "#ffcf40",
-      "BCC436.mock"           = "#4F7942",
-      "BCC436.C6-HSL"         = "#4aba91"
-    ),
-    labels = c(
-      "Golden_Promise.mock" = "Golden Promise + mock",
-      "Golden_Promise.C6-HSL" = "Golden Promise + C6-HSL",
-      "BCC436.mock" = "BCC436 + mock",
-      "BCC436.C6-HSL" = "BCC436 + C6-HSL"
-    ),
-    breaks =   c(
-      "Golden_Promise.mock" ,
-      "Golden_Promise.C6-HSL" ,
-      "BCC436.mock" ,
-      "BCC436.C6-HSL"
-    )
-  ) +
-  scale_alpha_continuous(
-    name = "Rel. Abundance [%]",
-    range = c(0.1, 1)   # 0.1 = sehr blass, 1 = volle Sättigung
-  ) +
-  scale_x_discrete(expand = c(0,0)) +
-  scale_y_discrete(expand = c(0,0))+
-  facet_nested(~ Duration + Genotype + Treatment, scales = "free_x") +
-  theme(
-    axis.title.x  = element_blank(),
-    axis.text.x   = element_blank(),
-    axis.ticks.x  = element_blank(),
-    panel.grid.major = element_blank(),
-    panel.grid.minor = element_blank()
-  ) +
-  labs(
-    title = "Top 10 Most Abundant ASV per Group",
-    x = "Sample",
-    y = "ASV"
-  )+ theme(
-    plot.title=element_text(color="black",size = 10, hjust=0, vjust = 2, face= "bold"),
-    plot.title.position = "panel",
-    strip.text = element_text(size = 10, face = "bold"),
-    strip.background = element_rect(fill = "white", color = "black", linewidth = 1),
-    strip.placement = "outside",
-    axis.text.x = element_blank(), 
-    axis.title.y = element_text(size = 10, face = "plain"),  
-    legend.text = element_text(size = 10, face = "plain", colour = "black"),
-    #legend.position = "bottom",
-    axis.text.y = element_text(colour = "black", size = 7, face = "plain"),
-    axis.title.x =element_text(size = 10, face = "plain"))
-
-
-file_name <- paste0("TOP10/TOP10_Phylum_FE.png")
-
-
-
-ggsave(
-  filename = file_name,
-  plot = last_plot(),
-  width = 25,      # cm
-  height = 10,     # cm
-  units = "cm",     # specify centimeters
-  dpi = 300,
-  path = out_dir# resolution (300 dpi = publication quality)
-)
+saveWorkbook(wb, file.path(out_dir, "global_PERMANOVA.xlsx"), overwrite = TRUE)
 
 
 
@@ -1775,19 +1252,7 @@ ggsave(
 # 
 # Shannon & Simpson → tell you how diverse the community is in terms of both species number and relative abundances.
 ####
-my_theme <-  theme(
-  legend.text = element_text(size = 14, colour = "black"),
-  axis.title.x = element_text(colour = "black", size = 14),
-  axis.title.y = element_text( size = 14, colour = "black"),
-  axis.text.x = element_text(vjust = 0.5, size = 14, colour = "black"),
-  axis.text.y = element_text(vjust = 0.5, size = 14, colour = "black"),
-  axis.line = element_line(colour = "black"),
-  panel.background = element_blank(),
-  plot.title = element_text(size = 14, color = "#000", hjust = 0.5),
-  panel.grid.major = element_blank(),
-  panel.grid.minor = element_blank(),
-  legend.title = element_text(size = 14, face = "bold", colour = "black")  # Legend title
-)
+
 
 
 physeq_raref_FE <- subset_samples(physeq_raref, Soil == "Substrate")
@@ -1798,6 +1263,8 @@ alpha_div <- estimate_richness(physeq_raref_FE_wo_bulk, measures=c("Shannon", "S
 head(alpha_div)
 # Add metadata to the alpha diversity table
 alpha_div$SampleID <- rownames(alpha_div)
+# CHECK: "metadata" ist hier das zuletzt überschriebene Objekt (aus dem PERMANOVA-Teil);
+#        für FE sollte es die FE-Metadaten enthalten (sample_data(physeq_raref_FE_wo_bulk)).
 alpha_div <- merge(alpha_div, metadata, by="row.names")
 #alpha_div$Soil<-as.factor(alpha_div$Soil)
 
@@ -1962,6 +1429,7 @@ plot_Shannon_FE<-ggplot(alpha_div, aes(x=Duration, y=Shannon, fill=Treatment)) +
 
 
 
+
 #Für alle normalverteilten ANOVA
 mod_Chao1 <- aov(Chao1 ~ Genotype *Treatment * Duration, data = alpha_div)
 anova(mod_Chao1)
@@ -2104,6 +1572,7 @@ plot_Chao1_FE<-ggplot(alpha_div, aes(x=Duration, y=Chao1, fill=Treatment)) +
 
 
 
+
 #Für alle normalverteilten ANOVA
 mod_Observed <- aov(Observed ~ Genotype *Treatment * Duration, data = alpha_div)
 anova(mod_Observed)
@@ -2241,6 +1710,7 @@ plot_Observed_FE<-ggplot(alpha_div, aes(x=Duration, y=Observed, fill=Treatment))
   )
   ) +
   my_theme
+
 
 
 
@@ -2386,6 +1856,7 @@ plot_Simpson_FE<-ggplot(alpha_div, aes(x=Duration, y=Simpson, fill=Treatment)) +
 
 
 
+
 plot_Shannon_FE
 plot_Chao1_FE
 plot_Observed_FE
@@ -2423,6 +1894,8 @@ alpha_div <- estimate_richness(physeq_raref_JKI_wo_bulk, measures=c("Shannon", "
 head(alpha_div)
 # Add metadata to the alpha diversity table
 alpha_div$SampleID <- rownames(alpha_div)
+# CHECK: "metadata" ist das zuletzt überschriebene Objekt (hier: FE-Metadaten aus dem
+#        PERMANOVA-Teil); für JKI sollte sample_data(physeq_raref_JKI_wo_bulk) genutzt werden.
 alpha_div <- merge(alpha_div, metadata, by="row.names")
 #alpha_div$Soil<-as.factor(alpha_div$Soil)
 
@@ -2461,6 +1934,8 @@ mean_comp <- mean_comp %>%
   rename(letter = .group)
 mean_comp$letter <- trimws(mean_comp$letter)
 
+# CHECK: Im JKI-Teil stehen hier die FE-Levels ("Two-week-old", "16-week-old");
+#        JKI hat "Three-week-old" und "18-week-old" -> Duration wird zu NA.
 alpha_div <- alpha_div %>%
   mutate(
     Treatment = fct_relevel(Treatment, "mock", "C6-HSL"),
@@ -2502,6 +1977,8 @@ mean_comp<- mean_comp %>%
       )
     )
   )
+
+
 
 
 plot_Shannon_JKI<-ggplot(alpha_div, aes(x=Duration, y=Shannon, fill=Treatment)) +
@@ -2585,6 +2062,7 @@ plot_Shannon_JKI<-ggplot(alpha_div, aes(x=Duration, y=Shannon, fill=Treatment)) 
 
 
 
+
 mod_Chao1 <- aov(Chao1 ~ Genotype *Treatment * Duration, data = alpha_div)
 anova(mod_Chao1)
 
@@ -2605,6 +2083,8 @@ mean_comp <- mean_comp %>%
   rename(letter = .group)
 mean_comp$letter <- trimws(mean_comp$letter)
 
+# CHECK: Im JKI-Teil stehen hier die FE-Levels ("Two-week-old", "16-week-old");
+#        JKI hat "Three-week-old" und "18-week-old" -> Duration wird zu NA.
 alpha_div <- alpha_div %>%
   mutate(
     Treatment = fct_relevel(Treatment, "mock", "C6-HSL"),
@@ -2646,7 +2126,6 @@ mean_comp<- mean_comp %>%
       )
     )
   )
-
 
 plot_Chao1_JKI<-ggplot(alpha_div, aes(x=Duration, y=Chao1, fill=Treatment)) +
   geom_boxplot(aes(fill = Genotype_Treatment, color = Genotype_Treatment),
@@ -2727,6 +2206,7 @@ plot_Chao1_JKI<-ggplot(alpha_div, aes(x=Duration, y=Chao1, fill=Treatment)) +
 
 
 
+
 mod_Observed <- aov(Observed ~ Genotype *Treatment * Duration, data = alpha_div)
 anova(mod_Observed)
 
@@ -2745,6 +2225,8 @@ mean_comp <- mean_comp %>%
   rename(letter = .group)
 mean_comp$letter <- trimws(mean_comp$letter)
 
+# CHECK: Im JKI-Teil stehen hier die FE-Levels ("Two-week-old", "16-week-old");
+#        JKI hat "Three-week-old" und "18-week-old" -> Duration wird zu NA.
 alpha_div <- alpha_div %>%
   mutate(
     Treatment = fct_relevel(Treatment, "mock", "C6-HSL"),
@@ -2786,7 +2268,6 @@ mean_comp<- mean_comp %>%
       )
     )
   )
-
 
 plot_Observed_JKI<-ggplot(alpha_div, aes(x=Duration, y=Observed, fill=Treatment)) +
   geom_boxplot(aes(fill = Genotype_Treatment, color = Genotype_Treatment),
@@ -2866,6 +2347,8 @@ plot_Observed_JKI<-ggplot(alpha_div, aes(x=Duration, y=Observed, fill=Treatment)
   my_theme
 
 
+
+
 mod_Simpson <- aov(Simpson ~ Genotype *Treatment * Duration, data = alpha_div)
 anova(mod_Simpson)
 
@@ -2885,6 +2368,8 @@ mean_comp <- mean_comp %>%
 mean_comp$letter <- trimws(mean_comp$letter)
 
 
+# CHECK: Im JKI-Teil stehen hier die FE-Levels ("Two-week-old", "16-week-old");
+#        JKI hat "Three-week-old" und "18-week-old" -> Duration wird zu NA.
 alpha_div <- alpha_div %>%
   mutate(
     Treatment = fct_relevel(Treatment, "mock", "C6-HSL"),
@@ -2926,7 +2411,6 @@ mean_comp<- mean_comp %>%
       )
     )
   )
-
 
 plot_Simpson_JKI<-ggplot(alpha_div, aes(x=Duration, y=Simpson, fill=Treatment)) +
   geom_boxplot(aes(fill = Genotype_Treatment, color = Genotype_Treatment),
@@ -3008,6 +2492,7 @@ plot_Simpson_JKI<-ggplot(alpha_div, aes(x=Duration, y=Simpson, fill=Treatment)) 
 
 
 
+
 plot_Shannon_JKI
 plot_Chao1_JKI
 plot_Observed_JKI
@@ -3019,7 +2504,6 @@ ggarrange(plot_Shannon_JKI,plot_Simpson_JKI   ,
           common.legend = T,
           legend = "bottom",
           align = "hv")
-
 
 file_name <- paste0("Diversity/Diversity_JKI.png")
 
@@ -3034,17 +2518,629 @@ ggsave(
 )
 
 
+#Alpha diveristy comparison of both soils ------------------------------------
+
+
+physeq_raref_wo_bulk <- subset_samples(physeq_raref, Microhabitat == "RZ")
+alpha_div <- estimate_richness(physeq_raref_wo_bulk, measures=c("Shannon", "Simpson", "Chao1", "Observed"))
+head(alpha_div)
+# Add metadata to the alpha diversity table
+alpha_div$SampleID <- rownames(alpha_div)
+# CHECK: "metadata" ist hier das zuletzt überschriebene Objekt (RZ-Proben aus dem PERMANOVA-Teil);
+#        Für alle RZ-Proben passend wäre sample_data(physeq_raref_wo_bulk).
+alpha_div <- merge(alpha_div, metadata, by="row.names")
 
 
 
-# Deseq clean -------------------------------------------------------------
+# Optional: reorder factor levels if needed
+alpha_div <- alpha_div %>%
+  mutate(Treatment = fct_relevel(Treatment, "mock", "C6-HSL"),
+         Genotype = fct_relevel(Genotype, "Golden_Promise", "BCC436"),
+         Duration = fct_relevel(Duration, "Two-week-old", "16-week-old", "Three-week-old", "18-week-old"),
+         Soil = fct_relevel(Soil, "Substrate", "Field soil"))
 
-# PIPELINE 1 — Soil effect on the microbiome
-# 
-# Question:
-#   Does Substrate differ from Field soil in microbial composition?
 
 
+mod_shannon <- aov(Shannon ~ Genotype *Treatment * Duration * Soil, data = alpha_div)
+anova(mod_shannon)
+
+# über die Durations hinaus
+mean_comp <- mod_shannon %>% 
+  emmeans(specs = ~  Genotype *Treatment * Duration *Soil ) %>% # adj. mean per cultivar
+  cld(adjust = "Tukey", Letters = letters) # compact letter display (CLD)
+
+# Rename .group to something clearer
+mean_comp <- mean_comp %>% 
+  rename(letter = .group)
+mean_comp$letter <- trimws(mean_comp$letter)
+
+alpha_div <- alpha_div %>%
+  mutate(
+    Treatment = fct_relevel(Treatment, "mock", "C6-HSL"),
+    Genotype = fct_relevel(Genotype, "Golden_Promise", "BCC436"),
+    Duration = fct_relevel(Duration, "Two-week-old", "16-week-old", "Three-week-old", "18-week-old"),
+    
+    # FIX: Create interaction factor
+    Genotype_Treatment = interaction(Genotype, Treatment, sep = "."),
+    
+    # FIX: Force the correct order
+    Genotype_Treatment = factor(
+      Genotype_Treatment,
+      levels = c(
+        "Golden_Promise.mock",
+        "Golden_Promise.C6-HSL",
+        "BCC436.mock",
+        "BCC436.C6-HSL"
+      )
+    )
+  )
+
+mean_comp<- mean_comp %>% 
+  mutate(
+    Treatment = fct_relevel(Treatment, "mock", "C6-HSL"),
+    Genotype = fct_relevel(Genotype, "Golden_Promise", "BCC436"),
+    Duration = fct_relevel(Duration, "Two-week-old", "16-week-old", "Three-week-old", "18-week-old"),
+    
+    # FIX: Create interaction factor
+    Genotype_Treatment = interaction(Genotype, Treatment, sep = "."),
+    
+    # FIX: Force the correct order
+    Genotype_Treatment = factor(
+      Genotype_Treatment,
+      levels = c(
+        "Golden_Promise.mock",
+        "Golden_Promise.C6-HSL",
+        "BCC436.mock",
+        "BCC436.C6-HSL"
+      )
+    )
+  )
+
+
+
+
+shannon_plot<-ggplot(alpha_div, aes(x=Duration, y=Shannon, fill=Treatment)) +
+  geom_boxplot(aes(fill = Genotype_Treatment, color = Genotype_Treatment),
+               width = 0.6,
+               outlier.color = "white",
+               alpha = 0.3,
+               lwd = 0.6,
+               fatten = 1.5) +
+  geom_jitter(
+    aes(color = Genotype_Treatment),
+    size = 1.8,
+    shape = 9,
+    alpha = 1,
+    position = position_jitterdodge(jitter.width = 0.3, dodge.width = 0.6)
+  ) +
+  geom_text(
+    data = mean_comp,
+    aes(
+      x = Duration,
+      y = upper.CL+0.05,
+      label = letter,
+      group = Genotype_Treatment,
+      color = Genotype_Treatment
+    ),
+    color = "black",
+    position = position_dodge(width = 0.6),
+    inherit.aes = FALSE,
+    size = 4, hjust = 0.5
+  ) +
+  facet_nested(~ Soil,
+               scales = "free_x", space = "free") +
+  labs(
+    x = "",
+    y = "Shannon Index",
+    fill = "Genotype + Treatment",
+    color = "Genotype + Treatment"
+  ) +
+  
+  # Colors for both box and jitter
+  scale_fill_manual(
+    values = c(
+      "Golden_Promise.mock" = "#A67C00",
+      "Golden_Promise.C6-HSL" = "#ffcf40",
+      "BCC436.mock" = "#4F7942",
+      "BCC436.C6-HSL" = "#4aba91"
+    ),
+    labels = c(
+      "Golden_Promise.mock" = "Golden Promise + mock",
+      "Golden_Promise.C6-HSL" = "Golden Promise + C6-HSL",
+      "BCC436.mock" = "BCC436 + mock",
+      "BCC436.C6-HSL" = "BCC436 + C6-HSL"
+    ),
+    breaks =   c(
+      "Golden_Promise.mock" ,
+      "Golden_Promise.C6-HSL" ,
+      "BCC436.mock" ,
+      "BCC436.C6-HSL" 
+    )
+  )+
+  scale_color_manual(  values = c(
+    "Golden_Promise.mock" = "#A67C00",
+    "Golden_Promise.C6-HSL" = "#ffcf40",
+    "BCC436.mock" = "#4F7942",
+    "BCC436.C6-HSL" = "#4aba91"
+  ),
+  labels = c(
+    "Golden_Promise.mock" = "Golden Promise + mock",
+    "Golden_Promise.C6-HSL" = "Golden Promise + C6-HSL",
+    "BCC436.mock" = "BCC436 + mock",
+    "BCC436.C6-HSL" = "BCC436 + C6-HSL"
+  ),
+  breaks  =   c(
+    "Golden_Promise.mock" ,
+    "Golden_Promise.C6-HSL" ,
+    "BCC436.mock" ,
+    "BCC436.C6-HSL" 
+  )
+  ) +
+  my_theme+  theme(axis.text.x = element_blank())
+
+
+
+mod_Simpson <- aov(Simpson ~ Genotype *Treatment * Duration * Soil, data = alpha_div)
+anova(mod_Simpson)
+
+# über die Durations hinaus
+mean_comp <- mod_Simpson %>% 
+  emmeans(specs = ~  Genotype *Treatment * Duration *Soil ) %>% # adj. mean per cultivar
+  cld(adjust = "Tukey", Letters = letters) # compact letter display (CLD)
+
+# Rename .group to something clearer
+mean_comp <- mean_comp %>% 
+  rename(letter = .group)
+mean_comp$letter <- trimws(mean_comp$letter)
+
+alpha_div <- alpha_div %>%
+  mutate(
+    Treatment = fct_relevel(Treatment, "mock", "C6-HSL"),
+    Genotype = fct_relevel(Genotype, "Golden_Promise", "BCC436"),
+    Duration = fct_relevel(Duration, "Two-week-old", "16-week-old", "Three-week-old", "18-week-old"),
+    
+    # FIX: Create interaction factor
+    Genotype_Treatment = interaction(Genotype, Treatment, sep = "."),
+    
+    # FIX: Force the correct order
+    Genotype_Treatment = factor(
+      Genotype_Treatment,
+      levels = c(
+        "Golden_Promise.mock",
+        "Golden_Promise.C6-HSL",
+        "BCC436.mock",
+        "BCC436.C6-HSL"
+      )
+    )
+  )
+
+mean_comp<- mean_comp %>% 
+  mutate(
+    Treatment = fct_relevel(Treatment, "mock", "C6-HSL"),
+    Genotype = fct_relevel(Genotype, "Golden_Promise", "BCC436"),
+    Duration = fct_relevel(Duration, "Two-week-old", "16-week-old", "Three-week-old", "18-week-old"),
+    
+    # FIX: Create interaction factor
+    Genotype_Treatment = interaction(Genotype, Treatment, sep = "."),
+    
+    # FIX: Force the correct order
+    Genotype_Treatment = factor(
+      Genotype_Treatment,
+      levels = c(
+        "Golden_Promise.mock",
+        "Golden_Promise.C6-HSL",
+        "BCC436.mock",
+        "BCC436.C6-HSL"
+      )
+    )
+  )
+
+
+
+
+simpson_plot<-ggplot(alpha_div, aes(x=Duration, y=Simpson, fill=Treatment)) +
+  geom_boxplot(aes(fill = Genotype_Treatment, color = Genotype_Treatment),
+               width = 0.6,
+               outlier.color = "white",
+               alpha = 0.3,
+               lwd = 0.6,
+               fatten = 1.5) +
+  geom_jitter(
+    aes(color = Genotype_Treatment),
+    size = 1.8,
+    shape = 9,
+    alpha = 1,
+    position = position_jitterdodge(jitter.width = 0.3, dodge.width = 0.6)
+  ) +
+  geom_text(
+    data = mean_comp,
+    aes(
+      x = Duration,
+      y = upper.CL,
+      label = letter,
+      group = Genotype_Treatment,
+      color = Genotype_Treatment
+    ),
+    color = "black",
+    position = position_dodge(width = 0.59),
+    inherit.aes = FALSE,
+    size = 4, hjust = 0.5
+  ) +
+  facet_nested(~ Soil,
+               scales = "free_x", space = "free",
+               labeller = labeller(Genotype = c("Golden_Promise" = "Golden Promise"))) +
+  labs(
+    x = "",
+    y = "Simpson Index",
+    fill = "Genotype + Treatment",
+    color = "Genotype + Treatment"
+  ) +
+  
+  # Colors for both box and jitter
+  scale_fill_manual(
+    values = c(
+      "Golden_Promise.mock" = "#A67C00",
+      "Golden_Promise.C6-HSL" = "#ffcf40",
+      "BCC436.mock" = "#4F7942",
+      "BCC436.C6-HSL" = "#4aba91"
+    ),
+    labels = c(
+      "Golden_Promise.mock" = "Golden Promise + mock",
+      "Golden_Promise.C6-HSL" = "Golden Promise + C6-HSL",
+      "BCC436.mock" = "BCC436 + mock",
+      "BCC436.C6-HSL" = "BCC436 + C6-HSL"
+    ),
+    breaks =   c(
+      "Golden_Promise.mock" ,
+      "Golden_Promise.C6-HSL" ,
+      "BCC436.mock" ,
+      "BCC436.C6-HSL" 
+    )
+  )+
+  scale_color_manual(  values = c(
+    "Golden_Promise.mock" = "#A67C00",
+    "Golden_Promise.C6-HSL" = "#ffcf40",
+    "BCC436.mock" = "#4F7942",
+    "BCC436.C6-HSL" = "#4aba91"
+  ),
+  labels = c(
+    "Golden_Promise.mock" = "Golden Promise + mock",
+    "Golden_Promise.C6-HSL" = "Golden Promise + C6-HSL",
+    "BCC436.mock" = "BCC436 + mock",
+    "BCC436.C6-HSL" = "BCC436 + C6-HSL"
+  ),
+  breaks  =   c(
+    "Golden_Promise.mock" ,
+    "Golden_Promise.C6-HSL" ,
+    "BCC436.mock" ,
+    "BCC436.C6-HSL" 
+  )
+  ) +
+  my_theme+ theme(strip.text = element_blank())
+
+ggarrange(shannon_plot,
+          simpson_plot,
+          ncol = 1,
+          nrow = 2,
+          common.legend = T,
+          legend = "bottom",
+          align = "hv")
+
+file_name <- paste0("Diversity/Shannon_Simpson_both.png")
+
+ggsave(
+  filename = file_name,
+  plot = last_plot(),
+  width = 20,       # width in cm
+  height = 15,      # height in cm
+  units = "cm",     # specify centimeters
+  dpi = 300,
+  path = out_dir# resolution (300 dpi = publication quality)
+)
+
+
+mod_Chao1 <- aov(Chao1 ~ Genotype *Treatment * Duration * Soil, data = alpha_div)
+anova(mod_Chao1)
+
+# über die Durations hinaus
+mean_comp <- mod_Chao1 %>% 
+  emmeans(specs = ~  Genotype *Treatment * Duration *Soil ) %>% # adj. mean per cultivar
+  cld(adjust = "Tukey", Letters = letters) # compact letter display (CLD)
+
+# Rename .group to something clearer
+mean_comp <- mean_comp %>% 
+  rename(letter = .group)
+mean_comp$letter <- trimws(mean_comp$letter)
+
+alpha_div <- alpha_div %>%
+  mutate(
+    Treatment = fct_relevel(Treatment, "mock", "C6-HSL"),
+    Genotype = fct_relevel(Genotype, "Golden_Promise", "BCC436"),
+    Duration = fct_relevel(Duration, "Two-week-old", "16-week-old", "Three-week-old", "18-week-old"),
+    
+    # FIX: Create interaction factor
+    Genotype_Treatment = interaction(Genotype, Treatment, sep = "."),
+    
+    # FIX: Force the correct order
+    Genotype_Treatment = factor(
+      Genotype_Treatment,
+      levels = c(
+        "Golden_Promise.mock",
+        "Golden_Promise.C6-HSL",
+        "BCC436.mock",
+        "BCC436.C6-HSL"
+      )
+    )
+  )
+
+mean_comp<- mean_comp %>% 
+  mutate(
+    Treatment = fct_relevel(Treatment, "mock", "C6-HSL"),
+    Genotype = fct_relevel(Genotype, "Golden_Promise", "BCC436"),
+    Duration = fct_relevel(Duration, "Two-week-old", "16-week-old", "Three-week-old", "18-week-old"),
+    
+    # FIX: Create interaction factor
+    Genotype_Treatment = interaction(Genotype, Treatment, sep = "."),
+    
+    # FIX: Force the correct order
+    Genotype_Treatment = factor(
+      Genotype_Treatment,
+      levels = c(
+        "Golden_Promise.mock",
+        "Golden_Promise.C6-HSL",
+        "BCC436.mock",
+        "BCC436.C6-HSL"
+      )
+    )
+  )
+
+
+
+
+Chao1_plot<-ggplot(alpha_div, aes(x=Duration, y=Chao1, fill=Treatment)) +
+  geom_boxplot(aes(fill = Genotype_Treatment, color = Genotype_Treatment),
+               width = 0.6,
+               outlier.color = "white",
+               alpha = 0.3,
+               lwd = 0.6,
+               fatten = 1.5) +
+  geom_jitter(
+    aes(color = Genotype_Treatment),
+    size = 1.8,
+    shape = 9,
+    alpha = 1,
+    position = position_jitterdodge(jitter.width = 0.3, dodge.width = 0.6)
+  ) +
+  geom_text(
+    data = mean_comp,
+    aes(
+      x = Duration,
+      y = upper.CL+0.05,
+      label = letter,
+      group = Genotype_Treatment,
+      color = Genotype_Treatment
+    ),
+    color = "black",
+    position = position_dodge(width = 0.6),
+    inherit.aes = FALSE,
+    size = 4, hjust = 0.5
+  ) +
+  facet_nested(~ Soil,
+               scales = "free_x", space = "free") +
+  labs(
+    x = "",
+    y = "Chao1",
+    fill = "Genotype + Treatment",
+    color = "Genotype + Treatment"
+  ) +
+  
+  # Colors for both box and jitter
+  scale_fill_manual(
+    values = c(
+      "Golden_Promise.mock" = "#A67C00",
+      "Golden_Promise.C6-HSL" = "#ffcf40",
+      "BCC436.mock" = "#4F7942",
+      "BCC436.C6-HSL" = "#4aba91"
+    ),
+    labels = c(
+      "Golden_Promise.mock" = "Golden Promise + mock",
+      "Golden_Promise.C6-HSL" = "Golden Promise + C6-HSL",
+      "BCC436.mock" = "BCC436 + mock",
+      "BCC436.C6-HSL" = "BCC436 + C6-HSL"
+    ),
+    breaks =   c(
+      "Golden_Promise.mock" ,
+      "Golden_Promise.C6-HSL" ,
+      "BCC436.mock" ,
+      "BCC436.C6-HSL" 
+    )
+  )+
+  scale_color_manual(  values = c(
+    "Golden_Promise.mock" = "#A67C00",
+    "Golden_Promise.C6-HSL" = "#ffcf40",
+    "BCC436.mock" = "#4F7942",
+    "BCC436.C6-HSL" = "#4aba91"
+  ),
+  labels = c(
+    "Golden_Promise.mock" = "Golden Promise + mock",
+    "Golden_Promise.C6-HSL" = "Golden Promise + C6-HSL",
+    "BCC436.mock" = "BCC436 + mock",
+    "BCC436.C6-HSL" = "BCC436 + C6-HSL"
+  ),
+  breaks  =   c(
+    "Golden_Promise.mock" ,
+    "Golden_Promise.C6-HSL" ,
+    "BCC436.mock" ,
+    "BCC436.C6-HSL" 
+  )
+  ) +
+  my_theme+  theme(axis.text.x = element_blank())
+
+
+mod_Observed <- aov(Observed ~ Genotype *Treatment * Duration * Soil, data = alpha_div)
+anova(mod_Observed)
+
+# über die Durations hinaus
+mean_comp <- mod_Observed %>% 
+  emmeans(specs = ~  Genotype *Treatment * Duration *Soil ) %>% # adj. mean per cultivar
+  cld(adjust = "Tukey", Letters = letters) # compact letter display (CLD)
+
+# Rename .group to something clearer
+mean_comp <- mean_comp %>% 
+  rename(letter = .group)
+mean_comp$letter <- trimws(mean_comp$letter)
+
+alpha_div <- alpha_div %>%
+  mutate(
+    Treatment = fct_relevel(Treatment, "mock", "C6-HSL"),
+    Genotype = fct_relevel(Genotype, "Golden_Promise", "BCC436"),
+    Duration = fct_relevel(Duration, "Two-week-old", "16-week-old", "Three-week-old", "18-week-old"),
+    
+    # FIX: Create interaction factor
+    Genotype_Treatment = interaction(Genotype, Treatment, sep = "."),
+    
+    # FIX: Force the correct order
+    Genotype_Treatment = factor(
+      Genotype_Treatment,
+      levels = c(
+        "Golden_Promise.mock",
+        "Golden_Promise.C6-HSL",
+        "BCC436.mock",
+        "BCC436.C6-HSL"
+      )
+    )
+  )
+
+mean_comp<- mean_comp %>% 
+  mutate(
+    Treatment = fct_relevel(Treatment, "mock", "C6-HSL"),
+    Genotype = fct_relevel(Genotype, "Golden_Promise", "BCC436"),
+    Duration = fct_relevel(Duration, "Two-week-old", "16-week-old", "Three-week-old", "18-week-old"),
+    
+    # FIX: Create interaction factor
+    Genotype_Treatment = interaction(Genotype, Treatment, sep = "."),
+    
+    # FIX: Force the correct order
+    Genotype_Treatment = factor(
+      Genotype_Treatment,
+      levels = c(
+        "Golden_Promise.mock",
+        "Golden_Promise.C6-HSL",
+        "BCC436.mock",
+        "BCC436.C6-HSL"
+      )
+    )
+  )
+
+
+
+
+Observed_plot<-ggplot(alpha_div, aes(x=Duration, y=Observed, fill=Treatment)) +
+  geom_boxplot(aes(fill = Genotype_Treatment, color = Genotype_Treatment),
+               width = 0.6,
+               outlier.color = "white",
+               alpha = 0.3,
+               lwd = 0.6,
+               fatten = 1.5) +
+  geom_jitter(
+    aes(color = Genotype_Treatment),
+    size = 1.8,
+    shape = 9,
+    alpha = 1,
+    position = position_jitterdodge(jitter.width = 0.3, dodge.width = 0.6)
+  ) +
+  geom_text(
+    data = mean_comp,
+    aes(
+      x = Duration,
+      y = upper.CL,
+      label = letter,
+      group = Genotype_Treatment,
+      color = Genotype_Treatment
+    ),
+    color = "black",
+    position = position_dodge(width = 0.59),
+    inherit.aes = FALSE,
+    size = 4, hjust = 0.5
+  ) +
+  facet_nested(~ Soil,
+               scales = "free_x", space = "free",
+               labeller = labeller(Genotype = c("Golden_Promise" = "Golden Promise"))) +
+  labs(
+    x = "",
+    y = "Observed richness",
+    fill = "Genotype + Treatment",
+    color = "Genotype + Treatment"
+  ) +
+  
+  # Colors for both box and jitter
+  scale_fill_manual(
+    values = c(
+      "Golden_Promise.mock" = "#A67C00",
+      "Golden_Promise.C6-HSL" = "#ffcf40",
+      "BCC436.mock" = "#4F7942",
+      "BCC436.C6-HSL" = "#4aba91"
+    ),
+    labels = c(
+      "Golden_Promise.mock" = "Golden Promise + mock",
+      "Golden_Promise.C6-HSL" = "Golden Promise + C6-HSL",
+      "BCC436.mock" = "BCC436 + mock",
+      "BCC436.C6-HSL" = "BCC436 + C6-HSL"
+    ),
+    breaks =   c(
+      "Golden_Promise.mock" ,
+      "Golden_Promise.C6-HSL" ,
+      "BCC436.mock" ,
+      "BCC436.C6-HSL" 
+    )
+  )+
+  scale_color_manual(  values = c(
+    "Golden_Promise.mock" = "#A67C00",
+    "Golden_Promise.C6-HSL" = "#ffcf40",
+    "BCC436.mock" = "#4F7942",
+    "BCC436.C6-HSL" = "#4aba91"
+  ),
+  labels = c(
+    "Golden_Promise.mock" = "Golden Promise + mock",
+    "Golden_Promise.C6-HSL" = "Golden Promise + C6-HSL",
+    "BCC436.mock" = "BCC436 + mock",
+    "BCC436.C6-HSL" = "BCC436 + C6-HSL"
+  ),
+  breaks  =   c(
+    "Golden_Promise.mock" ,
+    "Golden_Promise.C6-HSL" ,
+    "BCC436.mock" ,
+    "BCC436.C6-HSL" 
+  )
+  ) +
+  my_theme+ theme(strip.text = element_blank())
+
+
+
+
+ggarrange(Chao1_plot,
+          Observed_plot,
+          ncol = 1,
+          nrow = 2,
+          common.legend = T,
+          legend = "bottom",
+          align = "hv")
+
+file_name <- paste0("Diversity/Chao1_Observed_both.png")
+
+ggsave(
+  filename = file_name,
+  plot = last_plot(),
+  width = 20,       # width in cm
+  height = 15,      # height in cm
+  units = "cm",     # specify centimeters
+  dpi = 300,
+  path = out_dir# resolution (300 dpi = publication quality)
+)
+
+
+
+# Deseq clean potting substrate -------------------------------------------------------------
 library(phyloseq)
 library(DESeq2)
 library(dplyr)
@@ -3112,7 +3208,6 @@ summary(res_soil)
 
 
 
-##Zeigt jetzt alle verschiedene ASV von allen Genotypen und alle Behandlungen
 ggplot(res_soil_sig, aes(x = reorder(Genus, log2FoldChange), y = log2FoldChange, fill = log2FoldChange > 0)) +
   geom_bar(stat = "identity") +
   geom_errorbar(aes(ymin = log2FoldChange - lfcSE,
@@ -3125,11 +3220,6 @@ ggplot(res_soil_sig, aes(x = reorder(Genus, log2FoldChange), y = log2FoldChange,
   theme_minimal() +
   theme(legend.position = "none")
 
-
-# PIPELINE 2 — Genotype effect on the microbiome
-# 
-# Question:
-#   Do Golden Promise and BCC436 differ in their microbiome under identical conditions?
 
 
 SOIL_SYSTEM <- "Substrate"          # or "JKI"
@@ -3275,6 +3365,7 @@ FIXED_TREATMENT <- "mock"
 FIXED_DURATION <- "Two-week-old"
 
 
+
 relabu_sig <- relabu_sig %>%
   filter(
     Soil == SOIL_SYSTEM,
@@ -3311,12 +3402,9 @@ ab<-ggplot(relabu_sig, aes(Abundance, OTU, fill = Genotype)) +
 ggarrange(dif,ab, ncol = 2, nrow = 1,align = "h", common.legend = TRUE, widths = c(1.85, 0.9))
 
 
-#### GP 2 weeks ---------------------------
-# PIPELINE 2 — Genotype effect on the microbiome 
-# 
-# Question:
-#   Do Golden Promise and BCC436 differ in their microbiome under identical conditions?
 
+
+#### GP 2 weeks ---------------------------
 
 SOIL_SYSTEM <- "FE"          # or "JKI"
 FIXED_GENOTYPE <- "Golden_Promise"
@@ -3420,7 +3508,7 @@ ggplot(res_treat_GP_sig_wo_rownames, aes(x = reorder(ASV, log2FoldChange), y = l
                 width = 0.2, color = "black") +
   coord_flip() +
   labs(title = paste("Differentially Abundant Taxa:"),
-       x = "ASV", y = "Log2 Fold Change") +
+       x = "Genus", y = "Log2 Fold Change") +
   scale_fill_manual(values = c("red", "blue"), labels = c("Decreased", "Increased")) +
   theme_minimal() +
   theme(legend.position = "none")
@@ -3457,8 +3545,6 @@ ggplot(res_treat_GP_sig_wo_rownames, aes(x = reorder(ASV_Phylum, log2FoldChange)
 
 ##speichern für unten
 res_treat_GP_sig_wo_rownames_2weeks<-res_treat_GP_sig_wo_rownames
-
-
 
 palette_24  <- c(
   "#1F77B4","#FF7F0E","#2CA02C","#D62728","#9467BD",
@@ -3509,6 +3595,7 @@ FIXED_GENOTYPE <- "Golden_Promise"
 FIXED_DURATION <- "Two-week-old"
 
 
+# CHECK: relabu_sig wird hier vor der Definition gefiltert und gleich danach überschrieben.
 relabu_sig <- relabu_sig %>%
   filter(
     Soil == SOIL_SYSTEM,
@@ -3548,12 +3635,10 @@ ggarrange(dif,ab, ncol = 2, nrow = 1,align = "h", common.legend = F, widths = c(
 
 
 
-####GP 16 weeks ---------------------------------------------------
-
+#### GP 16 weeks ---------------------------------------------------
 SOIL_SYSTEM <- "FE"          # or "JKI"
 FIXED_GENOTYPE <- "Golden_Promise"
 FIXED_DURATION <- "16-week-old"
-
 
 physeq_treat_GP <- physeq_raref_FE_wo_bulk
 
@@ -3599,7 +3684,6 @@ colnames(sample_data(physeq_treat_GP))
 
 dds_treat_GP <- phyloseq_to_deseq2(physeq_treat_GP, ~ Treatment)
 
-
 dds_treat_GP <- DESeq(
   dds_treat_GP,
   test = "Wald",
@@ -3616,9 +3700,9 @@ res_treat_GP <- results(
 )
 
 
-
 ##speichern für unten
 res_treat_GP_16weeks<-res_treat_GP
+
 
 res_treat_GP_sig <- res_treat_GP %>%
   as.data.frame() %>%
@@ -3628,23 +3712,6 @@ res_treat_GP_sig <- cbind(
   res_treat_GP_sig,
   as(tax_table(physeq_treat_GP)[rownames(res_treat_GP_sig), ], "matrix")
 )
-
-# Interpretation
-# Positiver log2FoldChange
-# log2FC > 0
-# 
-# 
-# → ASV ist angereichert unter C6-HSL
-# → höhere relative (normalisierte) Abundanz im C6-HSL-Treatment
-# → „C6-HSL fördert diese ASV“
-# 
-# Negativer log2FoldChange
-# log2FC < 0
-# 
-# 
-# → ASV ist reduziert unter C6-HSL
-# → höhere Abundanz im mock
-# → „C6-HSL unterdrückt / verdrängt diese ASV“
 
 
 
@@ -3739,6 +3806,7 @@ FIXED_GENOTYPE <- "Golden_Promise"
 FIXED_DURATION <- "16-week-old"
 
 
+# CHECK: relabu_sig wird hier vor der Definition gefiltert und gleich danach überschrieben.
 relabu_sig <- relabu_sig %>%
   filter(
     Soil == SOIL_SYSTEM,
@@ -3776,11 +3844,10 @@ ab<-ggplot(relabu_sig, aes(Abundance, OTU, fill = Treatment)) +
 ggarrange(dif,ab, ncol = 2, nrow = 1,align = "h", common.legend = F, widths = c(1.85, 0.9),  legend = "bottom"  )
 
 
+
+
 #### BCC 2 weeks ---------------------------
-# PIPELINE 2 — Genotype effect on the microbiome 
-# 
-# Question:
-#   Do Golden Promise and BCC436 differ in their microbiome under identical conditions?
+
 
 
 SOIL_SYSTEM <- "FE"          # or "JKI"
@@ -3795,6 +3862,7 @@ physeq_treat_BCC <- subset_samples(
     Duration  == FIXED_DURATION &
     Treatment %in% c("mock", "C6-HSL")
 )
+
 
 otu <- as.data.frame(otu_table(physeq_treat_BCC))
 
@@ -3829,6 +3897,7 @@ colnames(sample_data(physeq_treat_BCC))
 
 
 dds_treat_BCC <- phyloseq_to_deseq2(physeq_treat_BCC, ~ Treatment)
+
 dds_treat_BCC <- DESeq(
   dds_treat_BCC,
   test = "Wald",
@@ -3844,6 +3913,7 @@ res_treat_BCC <- results(
   cooksCutoff = FALSE
 )
 
+
 ##speichern für unten
 res_treat_BCC_2weeks<-res_treat_BCC
 
@@ -3857,13 +3927,7 @@ res_treat_BCC_sig <- cbind(
   as(tax_table(physeq_treat_BCC)[rownames(res_treat_BCC_sig), ], "matrix")
 )
 
-# Interpretation
-# 
-# log2FoldChange > 0
-# → taxon enriched in Golden Promise
-# 
-# log2FoldChange < 0
-# → taxon enriched in BCC436
+
 
 table(sample_data(physeq_treat_BCC)$Genotype)
 table(sample_data(physeq_treat_BCC)$Treatment)
@@ -3922,13 +3986,13 @@ ggplot(res_treat_BCC_sig_wo_rownames, aes(x = reorder(ASV_Phylum, log2FoldChange
 ##speichern für unten
 res_treat_BCC_sig_wo_rownames_2weeks<-res_treat_BCC_sig_wo_rownames
 
-
 dif<-ggplot(res_treat_BCC_sig_wo_rownames, aes(log2FoldChange, reorder(ASV, log2FoldChange), color = Genus ))+
   geom_point() +theme_bw() +
   geom_segment( aes(x=0, xend=log2FoldChange, y=ASV, yend=ASV, color = Genus)) +
   geom_vline(xintercept = 0, size=0.3) +xlab("log2FoldChange") +
   ylab(NULL)+
   scale_color_manual(values = palette_24)
+
 
 PS_asv_rel <- transform_sample_counts(
   physeq_treat_BCC,   # SAME object used for DESeq2
@@ -3952,7 +4016,7 @@ head(sig_asvs)
 
 
 SOIL_SYSTEM <- "FE"          # or "JKI"
-FIXED_GENOTYPE <- "Golden_Promise"
+FIXED_GENOTYPE <- "Golden_Promise"  # CHECK: Genotyp passt nicht zum Block (wirkungslos, da der Filter unten überschrieben wird)
 FIXED_DURATION <- "Two-week-old"
 
 
@@ -3995,8 +4059,7 @@ ggarrange(dif,ab, ncol = 2, nrow = 1,align = "h", common.legend = F, widths = c(
 
 
 
-####BCC 16 weeks ---------------------------------------------------
-
+#### BCC 16 weeks ---------------------------------------------------
 SOIL_SYSTEM <- "FE"          # or "JKI"
 FIXED_GENOTYPE <- "BCC436"
 FIXED_DURATION <- "16-week-old"
@@ -4009,6 +4072,7 @@ physeq_treat_BCC <- subset_samples(
     Duration  == FIXED_DURATION &
     Treatment %in% c("mock", "C6-HSL")
 )
+
 
 otu <- as.data.frame(otu_table(physeq_treat_BCC))
 
@@ -4059,6 +4123,7 @@ res_treat_BCC <- results(
   cooksCutoff = FALSE
 )
 
+
 ##speichern für unten
 res_treat_BCC_16weeks<-res_treat_BCC
 
@@ -4071,23 +4136,6 @@ res_treat_BCC_sig <- cbind(
   res_treat_BCC_sig,
   as(tax_table(physeq_treat_BCC)[rownames(res_treat_BCC_sig), ], "matrix")
 )
-
-# Interpretation
-# Positiver log2FoldChange
-# log2FC > 0
-# 
-# 
-# → ASV ist angereichert unter C6-HSL
-# → höhere relative (normalisierte) Abundanz im C6-HSL-Treatment
-# → „C6-HSL fördert diese ASV“
-# 
-# Negativer log2FoldChange
-# log2FC < 0
-# 
-# 
-# → ASV ist reduziert unter C6-HSL
-# → höhere Abundanz im mock
-# → „C6-HSL unterdrückt / verdrängt diese ASV“
 
 
 
@@ -4178,7 +4226,7 @@ head(sig_asvs)
 
 
 SOIL_SYSTEM <- "FE"          # or "JKI"
-FIXED_GENOTYPE <- "Golden_Promise"
+FIXED_GENOTYPE <- "Golden_Promise"  # CHECK: Genotyp passt nicht zum Block (wirkungslos, da der Filter unten überschrieben wird)
 FIXED_DURATION <- "16-week-old"
 
 
@@ -4221,7 +4269,9 @@ ggarrange(dif,ab, ncol = 2, nrow = 1,align = "h", common.legend = F, widths = c(
 
 
 
-# Volcano plots -----------------------------------------------------------
+
+
+# Volcano plots potting substrate-----------------------------------------------------------
 
 
 library(ggplot2)
@@ -4310,6 +4360,7 @@ plot_GP_2wk<-ggplot(res_df, aes(x = log2FoldChange, y = -log10(padj))) +
 
 
 
+
 ##GP 16 weeks
 
 # 1. DESeq2 Ergebnis in data.frame umwandeln
@@ -4382,6 +4433,8 @@ plot_GP_16wk<-ggplot(res_df, aes(x = log2FoldChange, y = -log10(padj))) +
     y = "-log10(adjusted p-value)",
     title = "Golden Promise 16 weeks-old"
   )
+
+
 
 
 ##BCC436 2 weeks
@@ -4459,6 +4512,7 @@ plot_BCC_2wk<-ggplot(res_df, aes(x = log2FoldChange, y = -log10(padj))) +
 
 
 
+
 ##BCC 16 weeks
 
 # 1. DESeq2 Ergebnis in data.frame umwandeln
@@ -4511,7 +4565,7 @@ plot_BCC_16wk<-ggplot(res_df, aes(x = log2FoldChange, y = -log10(padj))) +
     segment.size = 0.3,
     min.segment.length = 0,
     size = 3
-  ) +
+  )+
   theme_bw() +
   theme(
     legend.text = element_text(size = 12, colour = "black"),
@@ -4531,6 +4585,7 @@ plot_BCC_16wk<-ggplot(res_df, aes(x = log2FoldChange, y = -log10(padj))) +
     y = "-log10(adjusted p-value)",
     title = "BCC436 16 weeks-old"
   )
+
 
 
 
@@ -4560,215 +4615,673 @@ ggsave(
 )
 
 
+# Deseq clean field soil -------------------------------------------------------------
+
+
+#### GP 3 weeks field soil ---------------------------
+
+FIXED_GENOTYPE <- "Golden_Promise"
+FIXED_DURATION <- "Three-week-old"
+
+physeq_treat_GP <- physeq_raref_JKI_wo_bulk
+
+physeq_treat_GP <- subset_samples(
+  physeq_treat_GP,
+  Genotype == FIXED_GENOTYPE &
+    Duration  == FIXED_DURATION &
+    Treatment %in% c("mock", "C6-HSL")
+)
+
+
+otu <- as.data.frame(otu_table(physeq_treat_GP))
+
+sample_data(physeq_treat_GP)$Treatment <- factor(
+  sample_data(physeq_treat_GP)$Treatment,
+  levels = c("mock", "C6-HSL")
+)
+
+meta <- as.data.frame(sample_data(physeq_treat_GP))
+
+ntaxa(physeq_treat_GP)
+
+
+if (!taxa_are_rows(physeq_treat_GP)) {
+  otu <- t(otu)
+}
+
+prev_by_treat <- sapply(levels(meta$Treatment), function(tr) {
+  samples_tr <- rownames(meta)[meta$Treatment == tr]
+  rowSums(otu[, samples_tr] > 0)
+})
+
+keep_asvs <- apply(prev_by_treat, 1, function(x) any(x >= 3))
+
+keep_asvs_final <- keep_asvs & (taxa_sums(physeq_treat_GP) > 10)
+physeq_treat_GP <- prune_taxa(keep_asvs_final, physeq_treat_GP)
+
+
+dds_treat_GP <- phyloseq_to_deseq2(physeq_treat_GP, ~ Treatment)
+
+dds_treat_GP <- DESeq(
+  dds_treat_GP,
+  test = "Wald",
+  fitType = "parametric",
+  sfType = "poscounts"
+)
+
+resultsNames(dds_treat_GP)
+
+res_treat_GP <- results(
+  dds_treat_GP,
+  name = "Treatment_C6.HSL_vs_mock",
+  cooksCutoff = FALSE
+)
+
+
+##speichern für unten
+res_treat_GP_3weeks<-res_treat_GP
+
+
+res_treat_GP_sig <- res_treat_GP %>%
+  as.data.frame() %>%
+  filter(!is.na(padj) & padj < 0.05)
+
+res_treat_GP_sig <- cbind(
+  res_treat_GP_sig,
+  as(tax_table(physeq_treat_GP)[rownames(res_treat_GP_sig), ], "matrix")
+)
+
+res_treat_GP_sig_wo_rownames <- res_treat_GP_sig %>%
+  rownames_to_column(var = "ASV")
+
+res_treat_GP_sig_wo_rownames <- res_treat_GP_sig_wo_rownames %>% 
+  mutate(ASV_Phylum = paste(ASV, Phylum, sep = "_"))
+
+##speichern für unten
+res_treat_GP_sig_wo_rownames_3weeks<-res_treat_GP_sig_wo_rownames
 
 
 
-# MDS Control different soils ---------------------------------------
+#### GP 18 weeks field soil ---------------------------
 
-library(patchwork)
-library(phyloseq)
+FIXED_GENOTYPE <- "Golden_Promise"
+FIXED_DURATION <- "18-week-old"
+
+physeq_treat_GP <- physeq_raref_JKI_wo_bulk
+
+physeq_treat_GP <- subset_samples(
+  physeq_treat_GP,
+  Genotype == FIXED_GENOTYPE &
+    Duration  == FIXED_DURATION &
+    Treatment %in% c("mock", "C6-HSL")
+)
+
+
+otu <- as.data.frame(otu_table(physeq_treat_GP))
+
+sample_data(physeq_treat_GP)$Treatment <- factor(
+  sample_data(physeq_treat_GP)$Treatment,
+  levels = c("mock", "C6-HSL")
+)
+
+meta <- as.data.frame(sample_data(physeq_treat_GP))
+
+ntaxa(physeq_treat_GP)
+
+
+if (!taxa_are_rows(physeq_treat_GP)) {
+  otu <- t(otu)
+}
+
+prev_by_treat <- sapply(levels(meta$Treatment), function(tr) {
+  samples_tr <- rownames(meta)[meta$Treatment == tr]
+  rowSums(otu[, samples_tr] > 0)
+})
+
+keep_asvs <- apply(prev_by_treat, 1, function(x) any(x >= 3))
+
+keep_asvs_final <- keep_asvs & (taxa_sums(physeq_treat_GP) > 10)
+physeq_treat_GP <- prune_taxa(keep_asvs_final, physeq_treat_GP)
+
+
+dds_treat_GP <- phyloseq_to_deseq2(physeq_treat_GP, ~ Treatment)
+
+dds_treat_GP <- DESeq(
+  dds_treat_GP,
+  test = "Wald",
+  fitType = "parametric",
+  sfType = "poscounts"
+)
+
+resultsNames(dds_treat_GP)
+
+res_treat_GP <- results(
+  dds_treat_GP,
+  name = "Treatment_C6.HSL_vs_mock",
+  cooksCutoff = FALSE
+)
+
+
+##speichern für unten
+res_treat_GP_18weeks<-res_treat_GP
+
+
+res_treat_GP_sig <- res_treat_GP %>%
+  as.data.frame() %>%
+  filter(!is.na(padj) & padj < 0.05)
+
+res_treat_GP_sig <- cbind(
+  res_treat_GP_sig,
+  as(tax_table(physeq_treat_GP)[rownames(res_treat_GP_sig), ], "matrix")
+)
+
+res_treat_GP_sig_wo_rownames <- res_treat_GP_sig %>%
+  rownames_to_column(var = "ASV")
+
+res_treat_GP_sig_wo_rownames <- res_treat_GP_sig_wo_rownames %>% 
+  mutate(ASV_Phylum = paste(ASV, Phylum, sep = "_"))
+
+##speichern für unten
+res_treat_GP_sig_wo_rownames_18weeks<-res_treat_GP_sig_wo_rownames
+
+
+
+#### BCC 3 weeks field soil ---------------------------
+
+FIXED_GENOTYPE <- "BCC436"
+FIXED_DURATION <- "Three-week-old"
+
+physeq_treat_BCC <- physeq_raref_JKI_wo_bulk
+
+physeq_treat_BCC <- subset_samples(
+  physeq_treat_BCC,
+  Genotype == FIXED_GENOTYPE &
+    Duration  == FIXED_DURATION &
+    Treatment %in% c("mock", "C6-HSL")
+)
+
+
+otu <- as.data.frame(otu_table(physeq_treat_BCC))
+
+sample_data(physeq_treat_BCC)$Treatment <- factor(
+  sample_data(physeq_treat_BCC)$Treatment,
+  levels = c("mock", "C6-HSL")
+)
+
+meta <- as.data.frame(sample_data(physeq_treat_BCC))
+
+ntaxa(physeq_treat_BCC)
+
+
+if (!taxa_are_rows(physeq_treat_BCC)) {
+  otu <- t(otu)
+}
+
+prev_by_treat <- sapply(levels(meta$Treatment), function(tr) {
+  samples_tr <- rownames(meta)[meta$Treatment == tr]
+  rowSums(otu[, samples_tr] > 0)
+})
+
+keep_asvs <- apply(prev_by_treat, 1, function(x) any(x >= 3))
+
+keep_asvs_final <- keep_asvs & (taxa_sums(physeq_treat_BCC) > 10)
+physeq_treat_BCC <- prune_taxa(keep_asvs_final, physeq_treat_BCC)
+
+
+dds_treat_BCC <- phyloseq_to_deseq2(physeq_treat_BCC, ~ Treatment)
+
+dds_treat_BCC <- DESeq(
+  dds_treat_BCC,
+  test = "Wald",
+  fitType = "parametric",
+  sfType = "poscounts"
+)
+
+resultsNames(dds_treat_BCC)
+
+res_treat_BCC <- results(
+  dds_treat_BCC,
+  name = "Treatment_C6.HSL_vs_mock",
+  cooksCutoff = FALSE
+)
+
+
+##speichern für unten
+res_treat_BCC_3weeks<-res_treat_BCC
+
+
+res_treat_BCC_sig <- res_treat_BCC %>%
+  as.data.frame() %>%
+  filter(!is.na(padj) & padj < 0.05)
+
+res_treat_BCC_sig <- cbind(
+  res_treat_BCC_sig,
+  as(tax_table(physeq_treat_BCC)[rownames(res_treat_BCC_sig), ], "matrix")
+)
+
+res_treat_BCC_sig_wo_rownames <- res_treat_BCC_sig %>%
+  rownames_to_column(var = "ASV")
+
+res_treat_BCC_sig_wo_rownames <- res_treat_BCC_sig_wo_rownames %>% 
+  mutate(ASV_Phylum = paste(ASV, Phylum, sep = "_"))
+
+##speichern für unten
+res_treat_BCC_sig_wo_rownames_3weeks<-res_treat_BCC_sig_wo_rownames
+
+
+
+#### BCC 18 weeks field soil ---------------------------
+
+FIXED_GENOTYPE <- "BCC436"
+FIXED_DURATION <- "18-week-old"
+
+physeq_treat_BCC <- physeq_raref_JKI_wo_bulk
+
+physeq_treat_BCC <- subset_samples(
+  physeq_treat_BCC,
+  Genotype == FIXED_GENOTYPE &
+    Duration  == FIXED_DURATION &
+    Treatment %in% c("mock", "C6-HSL")
+)
+
+
+otu <- as.data.frame(otu_table(physeq_treat_BCC))
+
+sample_data(physeq_treat_BCC)$Treatment <- factor(
+  sample_data(physeq_treat_BCC)$Treatment,
+  levels = c("mock", "C6-HSL")
+)
+
+meta <- as.data.frame(sample_data(physeq_treat_BCC))
+
+ntaxa(physeq_treat_BCC)
+
+
+if (!taxa_are_rows(physeq_treat_BCC)) {
+  otu <- t(otu)
+}
+
+prev_by_treat <- sapply(levels(meta$Treatment), function(tr) {
+  samples_tr <- rownames(meta)[meta$Treatment == tr]
+  rowSums(otu[, samples_tr] > 0)
+})
+
+keep_asvs <- apply(prev_by_treat, 1, function(x) any(x >= 3))
+
+keep_asvs_final <- keep_asvs & (taxa_sums(physeq_treat_BCC) > 10)
+physeq_treat_BCC <- prune_taxa(keep_asvs_final, physeq_treat_BCC)
+
+
+dds_treat_BCC <- phyloseq_to_deseq2(physeq_treat_BCC, ~ Treatment)
+
+dds_treat_BCC <- DESeq(
+  dds_treat_BCC,
+  test = "Wald",
+  fitType = "parametric",
+  sfType = "poscounts"
+)
+
+resultsNames(dds_treat_BCC)
+
+res_treat_BCC <- results(
+  dds_treat_BCC,
+  name = "Treatment_C6.HSL_vs_mock",
+  cooksCutoff = FALSE
+)
+
+
+##speichern für unten
+res_treat_BCC_18weeks<-res_treat_BCC
+
+
+res_treat_BCC_sig <- res_treat_BCC %>%
+  as.data.frame() %>%
+  filter(!is.na(padj) & padj < 0.05)
+
+res_treat_BCC_sig <- cbind(
+  res_treat_BCC_sig,
+  as(tax_table(physeq_treat_BCC)[rownames(res_treat_BCC_sig), ], "matrix")
+)
+
+res_treat_BCC_sig_wo_rownames <- res_treat_BCC_sig %>%
+  rownames_to_column(var = "ASV")
+
+res_treat_BCC_sig_wo_rownames <- res_treat_BCC_sig_wo_rownames %>% 
+  mutate(ASV_Phylum = paste(ASV, Phylum, sep = "_"))
+
+##speichern für unten
+res_treat_BCC_sig_wo_rownames_18weeks<-res_treat_BCC_sig_wo_rownames
+
+
+
+
+# Volcano plots field soil -----------------------------------------------------------
+
+
 library(ggplot2)
 library(dplyr)
-library(forcats)
+library(ggrepel)
+
+
+res_treat_GP_3weeks
+res_treat_GP_18weeks
+
+res_treat_BCC_3weeks
+res_treat_BCC_18weeks
 
 
 
+# 1. DESeq2 Ergebnis in data.frame umwandeln
+res_df <- as.data.frame(res_treat_GP_3weeks)
 
+# 2. Nur vollständige Werte verwenden
+res_df <- res_df %>%
+  filter(!is.na(log2FoldChange) & !is.na(padj) & 
+           is.finite(log2FoldChange) & is.finite(padj))
 
-# Subset rhizosphere samples
-physeq_raref_GP<- subset_samples(physeq_raref, Genotype == "Golden_Promise")
-physeq_raref_GP <- subset_samples(physeq_raref_GP, Microhabitat == "RZ")
-physeq_raref_GP <- subset_samples(physeq_raref_GP, Treatment == "mock")
-
-# Remove taxa that are zero *within the subset*
-physeq_raref_GP <- prune_taxa(
-  taxa_sums(physeq_raref_GP) > 0,
-  physeq_raref_GP
-)
-
-
-durations <- unique(sample_data(physeq_raref_GP)$Duration)
-
-
-# Run MDS
-ord <- ordinate(physeq_raref_GP, method = "MDS", distance = "bray")
-
-# Plot
-plot_ordination(physeq_raref_GP, ord, type = "Sample", shape = "Soil", color = "Duration") + 
-  geom_point(size = 3) +
-  stat_ellipse(aes(color = Duration, group = Duration)) + 
-  theme_classic() +
-  theme(axis.text = element_text(size = 16),
-        axis.title = element_text(size = 18),
-        legend.title = element_blank(),
-        legend.text = element_text(size = 16)) +
-  scale_color_manual(values = c("#D6C0AE", "#B48E6A", "#A76D60", "#601700")) +
-  ggtitle(paste("Golden Promise - mock treatments"))
-
-
-# Subset rhizosphere samples
-physeq_raref_BCC<- subset_samples(physeq_raref, Genotype == "BCC436")
-physeq_raref_BCC <- subset_samples(physeq_raref_BCC, Microhabitat == "RZ")
-physeq_raref_BCC <- subset_samples(physeq_raref_BCC, Treatment == "mock")
-# Remove taxa that are zero *within the subset*
-physeq_raref_BCC <- prune_taxa(
-  taxa_sums(physeq_raref_BCC) > 0,
-  physeq_raref_BCC
-)
-
-
-durations <- unique(sample_data(physeq_raref_BCC)$Duration)
-
-
-# Run MDS
-ord <- ordinate(physeq_raref_BCC, method = "MDS", distance = "bray")
-
-# Plot
-plot_ordination(physeq_raref_BCC, ord, type = "Sample", shape = "Soil", color = "Duration") + 
-  geom_point(size = 3) +
-  stat_ellipse(aes(color = Duration, group = Duration)) + 
-  theme_classic() +
-  theme(axis.text = element_text(size = 16),
-        axis.title = element_text(size = 18),
-        legend.title = element_blank(),
-        legend.text = element_text(size = 16)) +
-  scale_color_manual(values = c("#84DCC6", "#D6EDFF", "#ACD7EC", "#8B95C9")) +
-  ggtitle(paste("BCC436 - mock treatments"))
-
-####
-
-# Subset rhizosphere samples
-physeq_raref_GP<- subset_samples(physeq_raref, Genotype == "Golden_Promise")
-physeq_raref_GP <- subset_samples(physeq_raref_GP, Microhabitat == "RZ")
-physeq_raref_GP <- subset_samples(physeq_raref_GP, Treatment == "C6-HSL")
-# Remove taxa that are zero *within the subset*
-physeq_raref_GP <- prune_taxa(
-  taxa_sums(physeq_raref_GP) > 0,
-  physeq_raref_GP
-)
-
-
-durations <- unique(sample_data(physeq_raref_GP)$Duration)
-
-
-# Run MDS
-ord <- ordinate(physeq_raref_GP, method = "MDS", distance = "bray")
-
-# Plot
-plot_ordination(physeq_raref_GP, ord, type = "Sample", shape = "Soil", color = "Duration") + 
-  geom_point(size = 3) +
-  stat_ellipse(aes(color = Duration, group = Duration)) + 
-  theme_classic() +
-  theme(axis.text = element_text(size = 16),
-        axis.title = element_text(size = 18),
-        legend.title = element_blank(),
-        legend.text = element_text(size = 16)) +
-  scale_color_manual(values = c("#D6C0AE", "#B48E6A", "#A76D60", "#601700")) +
-  ggtitle(paste("Golden Promise - C6-HSL treatments"))
-
-
-# Subset rhizosphere samples
-physeq_raref_BCC<- subset_samples(physeq_raref, Genotype == "BCC436")
-physeq_raref_BCC <- subset_samples(physeq_raref_BCC, Microhabitat == "RZ")
-physeq_raref_BCC <- subset_samples(physeq_raref_BCC, Treatment == "C6-HSL")
-# Remove taxa that are zero *within the subset*
-physeq_raref_BCC <- prune_taxa(
-  taxa_sums(physeq_raref_BCC) > 0,
-  physeq_raref_BCC
-)
-
-
-durations <- unique(sample_data(physeq_raref_BCC)$Duration)
-
-
-# Run MDS
-ord <- ordinate(physeq_raref_BCC, method = "MDS", distance = "bray")
-
-# Plot
-plot_ordination(physeq_raref_BCC, ord, type = "Sample", shape = "Soil", color = "Duration") + 
-  geom_point(size = 3) +
-  stat_ellipse(aes(color = Duration, group = Duration)) + 
-  theme_classic() +
-  theme(axis.text = element_text(size = 16),
-        axis.title = element_text(size = 18),
-        legend.title = element_blank(),
-        legend.text = element_text(size = 16)) +
-  scale_color_manual(values = c("#84DCC6", "#D6EDFF", "#ACD7EC", "#8B95C9")) +
-  ggtitle(paste("BCC436 - C6-HSL treatments"))
-
-
-###
-### Abschlussgrafik
-###
-
-
-# Subset rhizosphere samples
-physeq_raref_GP <- subset_samples(physeq_raref, Microhabitat == "RZ")
-
-# Remove taxa that are zero *within the subset*
-physeq_raref_GP <- prune_taxa(
-  taxa_sums(physeq_raref_GP) > 0,
-  physeq_raref_GP
-)
-
-
-# Extract sample_data as a data.frame
-samp_df <- data.frame(sample_data(physeq_raref_GP))
-
-# Make sure the relevant columns are factors
-samp_df$Treatment <- as.factor(samp_df$Treatment)
-samp_df$Genotype  <- as.factor(samp_df$Genotype)
-samp_df$Duration  <- as.factor(samp_df$Duration)
-samp_df$Soil  <- as.factor(samp_df$Soil)
-
-# Reorder factor levels
-samp_df <- samp_df %>%
+# 3. Status nach Signifikanz und Richtung festlegen
+res_df <- res_df %>%
   mutate(
-    Treatment = fct_relevel(Treatment, "mock", "C6-HSL"),
-    Genotype = fct_relevel(Genotype, "Golden_Promise", "BCC436"),
-    Soil = fct_relevel(Soil, "Substrate", "Field soil"),
-    Duration = fct_relevel(Duration, "Two-week-old", "16-week-old", "Three-week-old","18-week-old")
-  )
-
-
-
-samp_df <- samp_df %>%
-  mutate(
-    Timepoint = case_when(
-      Duration %in% c("Two-week-old", "Three-week-old")   ~ "Sampling Time Point 1",
-      Duration %in% c("16-week-old", "18-week-old") ~ "Sampling Time Point 2",
-      TRUE                                             ~ NA_character_
+    status = case_when(
+      padj >= 0.05 | abs(log2FoldChange) < 1 ~ "ns",   # nicht signifikant oder kleine Änderung
+      log2FoldChange > 0 & padj < 0.05 & log2FoldChange >= 1 ~ "up",
+      log2FoldChange < 0 & padj < 0.05 & log2FoldChange <= -1 ~ "down"
     )
   )
 
-# Put it back into phyloseq object
-sample_data(physeq_raref_GP) <- sample_data(samp_df)
-durations <- unique(sample_data(physeq_raref_GP)$Duration)
+# 4. Top 3 positive und negative Veränderungen auswählen
+top_up <- res_df %>%
+  filter(status == "up") %>%
+  arrange(desc(log2FoldChange)) %>%
+  slice_head(n = 3)
 
+top_down <- res_df %>%
+  filter(status == "down") %>%
+  arrange(log2FoldChange) %>%
+  slice_head(n = 3)
 
-# Run MDS
-ord <- ordinate(physeq_raref_GP, method = "MDS", distance = "bray")
+top_genes_GP_3wk <- bind_rows(top_up, top_down)
 
-# Plot
-plot_ordination(physeq_raref_GP, ord, type = "Sample", shape = "Genotype", color = "Treatment",) + 
-  geom_point(size = 5.5, alpha = 0.5, stroke = 0) +
-  #stat_ellipse(aes(color = Duration, group = Duration)) + 
+# 5. Volcano-Plot erstellen
+plot_GP_3wk<-ggplot(res_df, aes(x = log2FoldChange, y = -log10(padj))) +
+  geom_point(aes(color = status), alpha = 0.6) +
+  scale_color_manual(values = c("ns" = "grey", "down" = "red", "up" = "blue")) +
+  geom_vline(xintercept = c(-1, 1), linetype = "dashed") +
+  geom_hline(yintercept = -log10(0.05), linetype = "dashed") +
+  geom_text_repel(
+    data = top_genes_GP_3wk,
+    aes(label = rownames(top_genes_GP_3wk)),
+    nudge_x = ifelse(top_genes_GP_3wk$log2FoldChange > 0, 0.8, -0.8),
+    direction = "y",
+    force = 2,
+    box.padding = 0.6,
+    point.padding = 0.4,
+    max.overlaps = Inf,
+    segment.color = "black",
+    segment.size = 0.3,
+    min.segment.length = 0,
+    size = 3
+  )+
   theme_bw() +
-  theme(axis.text = element_text(size = 13, color = "black"),
-        axis.title = element_text(size = 13, color = "black"),
-        legend.title = element_text(size = 13, color = "black"),
-        legend.text = element_text(size = 13, color = "black"),
-        strip.text = element_text(
-          size = 13,
-          colour = "black",
-          face = "bold"
-        )) +
-  scale_color_manual(values = c( "#B48E6A",  "#601700")) +
-  facet_grid(Soil ~ Timepoint)
+  theme(
+    legend.text = element_text(size = 12, colour = "black"),
+    axis.title.x = element_text(colour = "black", size = 10),
+    axis.title.y = element_text( size = 10, colour = "black"),
+    axis.text.x = element_text(vjust = 0.5, size = 10, colour = "black"),
+    axis.text.y = element_text(vjust = 0.5, size = 10, colour = "black"),
+    axis.line = element_line(colour = "black"),
+    panel.background = element_blank(),
+    plot.title = element_text(size = 10, color = "#000", hjust = 0.5),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    legend.title = element_text(size = 12, face = "bold", colour = "black")  # Legend title
+  )+
+  labs(
+    x = "log2 fold change (C6-HSL vs mock)",
+    y = "-log10(adjusted p-value)",
+    title = "Golden Promise 3 weeks-old"
+  )
 
 
 
-file_name <- paste0("MDS/MDS_Abschluss.png")
+
+
+# 1. DESeq2 Ergebnis in data.frame umwandeln
+res_df <- as.data.frame(res_treat_GP_18weeks)
+
+# 2. Nur vollständige Werte verwenden
+res_df <- res_df %>%
+  filter(!is.na(log2FoldChange) & !is.na(padj) & 
+           is.finite(log2FoldChange) & is.finite(padj))
+
+# 3. Status nach Signifikanz und Richtung festlegen
+res_df <- res_df %>%
+  mutate(
+    status = case_when(
+      padj >= 0.05 | abs(log2FoldChange) < 1 ~ "ns",   # nicht signifikant oder kleine Änderung
+      log2FoldChange > 0 & padj < 0.05 & log2FoldChange >= 1 ~ "up",
+      log2FoldChange < 0 & padj < 0.05 & log2FoldChange <= -1 ~ "down"
+    )
+  )
+
+# 4. Top 3 positive und negative Veränderungen auswählen
+top_up <- res_df %>%
+  filter(status == "up") %>%
+  arrange(desc(log2FoldChange)) %>%
+  slice_head(n = 3)
+
+top_down <- res_df %>%
+  filter(status == "down") %>%
+  arrange(log2FoldChange) %>%
+  slice_head(n = 3)
+
+top_genes_GP_18wk <- bind_rows(top_up, top_down)
+
+# 5. Volcano-Plot erstellen
+plot_GP_18wk<-ggplot(res_df, aes(x = log2FoldChange, y = -log10(padj))) +
+  geom_point(aes(color = status), alpha = 0.6) +
+  scale_color_manual(values = c("ns" = "grey", "down" = "red", "up" = "blue")) +
+  geom_vline(xintercept = c(-1, 1), linetype = "dashed") +
+  geom_hline(yintercept = -log10(0.05), linetype = "dashed") +
+  geom_text_repel(
+    data = top_genes_GP_18wk,
+    aes(label = rownames(top_genes_GP_18wk)),
+    nudge_x = ifelse(top_genes_GP_18wk$log2FoldChange > 0, 0.8, -0.8),
+    direction = "y",
+    force = 2,
+    box.padding = 0.6,
+    point.padding = 0.4,
+    max.overlaps = Inf,
+    segment.color = "black",
+    segment.size = 0.3,
+    min.segment.length = 0,
+    size = 3
+  )+
+  theme_bw() +
+  theme(
+    legend.text = element_text(size = 12, colour = "black"),
+    axis.title.x = element_text(colour = "black", size = 10),
+    axis.title.y = element_text( size = 10, colour = "black"),
+    axis.text.x = element_text(vjust = 0.5, size = 10, colour = "black"),
+    axis.text.y = element_text(vjust = 0.5, size = 10, colour = "black"),
+    axis.line = element_line(colour = "black"),
+    panel.background = element_blank(),
+    plot.title = element_text(size = 10, color = "#000", hjust = 0.5),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    legend.title = element_text(size = 12, face = "bold", colour = "black")  # Legend title
+  )+
+  labs(
+    x = "log2 fold change (C6-HSL vs mock)",
+    y = "-log10(adjusted p-value)",
+    title = "Golden Promise 18 weeks-old"
+  )
+
+
+
+
+# 1. DESeq2 Ergebnis in data.frame umwandeln
+res_df <- as.data.frame(res_treat_BCC_3weeks)
+
+# 2. Nur vollständige Werte verwenden
+res_df <- res_df %>%
+  filter(!is.na(log2FoldChange) & !is.na(padj) & 
+           is.finite(log2FoldChange) & is.finite(padj))
+
+# 3. Status nach Signifikanz und Richtung festlegen
+res_df <- res_df %>%
+  mutate(
+    status = case_when(
+      padj >= 0.05 | abs(log2FoldChange) < 1 ~ "ns",   # nicht signifikant oder kleine Änderung
+      log2FoldChange > 0 & padj < 0.05 & log2FoldChange >= 1 ~ "up",
+      log2FoldChange < 0 & padj < 0.05 & log2FoldChange <= -1 ~ "down"
+    )
+  )
+
+# 4. Top 3 positive und negative Veränderungen auswählen
+top_up <- res_df %>%
+  filter(status == "up") %>%
+  arrange(desc(log2FoldChange)) %>%
+  slice_head(n = 3)
+
+top_down <- res_df %>%
+  filter(status == "down") %>%
+  arrange(log2FoldChange) %>%
+  slice_head(n = 3)
+
+top_genes_BCC_3wk <- bind_rows(top_up, top_down)
+
+# 5. Volcano-Plot erstellen
+plot_BCC_3wk<-ggplot(res_df, aes(x = log2FoldChange, y = -log10(padj))) +
+  geom_point(aes(color = status), alpha = 0.6) +
+  scale_color_manual(values = c("ns" = "grey", "down" = "red", "up" = "blue")) +
+  geom_vline(xintercept = c(-1, 1), linetype = "dashed") +
+  geom_hline(yintercept = -log10(0.05), linetype = "dashed") +
+  geom_text_repel(
+    data = top_genes_BCC_3wk,
+    aes(label = rownames(top_genes_BCC_3wk)),
+    nudge_x = ifelse(top_genes_BCC_3wk$log2FoldChange > 0, 0.8, -0.8),
+    direction = "y",
+    force = 2,
+    box.padding = 0.6,
+    point.padding = 0.4,
+    max.overlaps = Inf,
+    segment.color = "black",
+    segment.size = 0.3,
+    min.segment.length = 0,
+    size = 3
+  )+
+  theme_bw() +
+  theme(
+    legend.text = element_text(size = 12, colour = "black"),
+    axis.title.x = element_text(colour = "black", size = 10),
+    axis.title.y = element_text( size = 10, colour = "black"),
+    axis.text.x = element_text(vjust = 0.5, size = 10, colour = "black"),
+    axis.text.y = element_text(vjust = 0.5, size = 10, colour = "black"),
+    axis.line = element_line(colour = "black"),
+    panel.background = element_blank(),
+    plot.title = element_text(size = 10, color = "#000", hjust = 0.5),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    legend.title = element_text(size = 12, face = "bold", colour = "black")  # Legend title
+  )+
+  labs(
+    x = "log2 fold change (C6-HSL vs mock)",
+    y = "-log10(adjusted p-value)",
+    title = "BCC436 3 weeks-old"
+  )
+
+
+
+
+# 1. DESeq2 Ergebnis in data.frame umwandeln
+res_df <- as.data.frame(res_treat_BCC_18weeks)
+
+# 2. Nur vollständige Werte verwenden
+res_df <- res_df %>%
+  filter(!is.na(log2FoldChange) & !is.na(padj) & 
+           is.finite(log2FoldChange) & is.finite(padj))
+
+# 3. Status nach Signifikanz und Richtung festlegen
+res_df <- res_df %>%
+  mutate(
+    status = case_when(
+      padj >= 0.05 | abs(log2FoldChange) < 1 ~ "ns",   # nicht signifikant oder kleine Änderung
+      log2FoldChange > 0 & padj < 0.05 & log2FoldChange >= 1 ~ "up",
+      log2FoldChange < 0 & padj < 0.05 & log2FoldChange <= -1 ~ "down"
+    )
+  )
+
+# 4. Top 3 positive und negative Veränderungen auswählen
+top_up <- res_df %>%
+  filter(status == "up") %>%
+  arrange(desc(log2FoldChange)) %>%
+  slice_head(n = 3)
+
+top_down <- res_df %>%
+  filter(status == "down") %>%
+  arrange(log2FoldChange) %>%
+  slice_head(n = 3)
+
+top_genes_BCC_18wk <- bind_rows(top_up, top_down)
+
+# 5. Volcano-Plot erstellen
+plot_BCC_18wk<-ggplot(res_df, aes(x = log2FoldChange, y = -log10(padj))) +
+  geom_point(aes(color = status), alpha = 0.6) +
+  scale_color_manual(values = c("ns" = "grey", "down" = "red", "up" = "blue")) +
+  geom_vline(xintercept = c(-1, 1), linetype = "dashed") +
+  geom_hline(yintercept = -log10(0.05), linetype = "dashed") +
+  geom_text_repel(
+    data = top_genes_BCC_18wk,
+    aes(label = rownames(top_genes_BCC_18wk)),
+    nudge_x = ifelse(top_genes_BCC_18wk$log2FoldChange > 0, 0.8, -0.8),
+    direction = "y",
+    force = 2,
+    box.padding = 0.6,
+    point.padding = 0.4,
+    max.overlaps = Inf,
+    segment.color = "black",
+    segment.size = 0.3,
+    min.segment.length = 0,
+    size = 3
+  )+
+  theme_bw() +
+  theme(
+    legend.text = element_text(size = 12, colour = "black"),
+    axis.title.x = element_text(colour = "black", size = 10),
+    axis.title.y = element_text( size = 10, colour = "black"),
+    axis.text.x = element_text(vjust = 0.5, size = 10, colour = "black"),
+    axis.text.y = element_text(vjust = 0.5, size = 10, colour = "black"),
+    axis.line = element_line(colour = "black"),
+    panel.background = element_blank(),
+    plot.title = element_text(size = 10, color = "#000", hjust = 0.5),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    legend.title = element_text(size = 12, face = "bold", colour = "black")  # Legend title
+  )+
+  labs(
+    x = "log2 fold change (C6-HSL vs mock)",
+    y = "-log10(adjusted p-value)",
+    title = "BCC436 18 weeks-old"
+  )
+
+
+
+
+plot_GP_3wk
+plot_GP_18wk
+plot_BCC_3wk
+plot_BCC_18wk
+
+
+
+ggarrange(plot_GP_3wk,plot_GP_18wk,plot_BCC_3wk,plot_BCC_18wk ,
+          ncol = 2, nrow = 2,align = "hv", common.legend = T,
+          legend = "bottom"  )
+
+
+
+file_name <- paste0("volcano/volcano_deseq_field_soil.png")
 
 ggsave(
   filename = file_name,
@@ -4780,5 +5293,968 @@ ggsave(
   path = out_dir# resolution (300 dpi = publication quality)
 )
 
+# 
+
+
+library(openxlsx)
+
+# Excel-Datei erstellen und df schreiben
+wb <- createWorkbook()
+
+addWorksheet(wb, "GP_3weeks")
+writeData(wb, "GP_3weeks", res_treat_GP_sig_wo_rownames_3weeks)
+
+addWorksheet(wb, "GP_18weeks")
+writeData(wb, "GP_18weeks", res_treat_GP_sig_wo_rownames_18weeks)
+
+addWorksheet(wb, "BCC_3weeks")
+writeData(wb, "BCC_3weeks", res_treat_BCC_sig_wo_rownames_3weeks)
+
+addWorksheet(wb, "BCC_18weeks")
+writeData(wb, "BCC_18weeks", res_treat_BCC_sig_wo_rownames_18weeks)
+
+
+saveWorkbook(wb, file.path(out_dir, "deseq_results_field_soil.xlsx"), overwrite = TRUE)
+
+
+# CHECK: Im Schnitt stehen BCC 18 Wochen (Feldboden) zweimal und BCC 16 Wochen (Substrat)
+#        gar nicht; res_treat_BCC_sig_wo_rownames_16weeks fehlt in der Liste.
+shared_asvs <- Reduce(
+  intersect,
+  list(res_treat_GP_sig_wo_rownames_3weeks$ASV, 
+       res_treat_GP_sig_wo_rownames_18weeks$ASV,
+       res_treat_BCC_sig_wo_rownames_3weeks$ASV,
+       res_treat_BCC_sig_wo_rownames_18weeks$ASV,
+       res_treat_GP_sig_wo_rownames_2weeks$ASV, 
+       res_treat_GP_sig_wo_rownames_16weeks$ASV,
+       res_treat_BCC_sig_wo_rownames_2weeks$ASV,
+       res_treat_BCC_sig_wo_rownames_18weeks$ASV
+  ))
+
+shared_asvs
+
+
+
+
+
+
+
+# # Relative abundance plots with consistent color mapping #  --------
+library(phyloseq)
+library(dplyr)
+library(ggplot2)
+library(forcats)
+library(RColorBrewer)
+library(ggh4x)
+library(scales)
+library(openxlsx)
+library(ggpubr)
+
+## Relative abundance (Phylum) ---------------------------------------------
+
+
+PS_phyl <- tax_glom(physeq_raref, "Phylum")
+PS_phyl_rel <- transform_sample_counts(PS_phyl, function(x) x / sum(x))
+PS_phyl_rel <- prune_taxa(taxa_sums(PS_phyl_rel) > 0, PS_phyl_rel)
+
+# Optional filtering (keep consistent across datasets)
+PS_phyl_rel <- filter_taxa(PS_phyl_rel,
+                           function(x) mean(x) >= 0.01,
+                           prune = TRUE)
+
+relabu_phyla <- psmelt(PS_phyl_rel)
+relabu_phyla$Abundance <- relabu_phyla$Abundance * 100
+
+
+## Relative abundance (Class) ----------------------------------------------
+
+
+PS_cl <- tax_glom(physeq_raref, "Class")
+PS_cl_rel <- transform_sample_counts(PS_cl, function(x) x / sum(x))
+PS_cl_rel <- prune_taxa(taxa_sums(PS_cl_rel) > 0, PS_cl_rel)
+
+# Optional filtering (keep consistent across datasets)
+# CHECK: Das Ergebnis wird PS_phyl_rel zugewiesen (nicht PS_cl_rel). Der Klassen-Filter
+#        (mean >= 1 %) wirkt dadurch nicht auf relabu_class; PS_phyl_rel enthält danach Klassen.
+PS_phyl_rel <- filter_taxa(PS_cl_rel,
+                           function(x) mean(x) >= 0.01,
+                           prune = TRUE)
+
+
+relabu_class <- psmelt(PS_cl_rel)
+relabu_class$Abundance <- relabu_class$Abundance * 100
+
+
+### Create GLOBAL color palettes --------------------------------------------
+
+# ---- Phylum colors (shared across ALL datasets)
+all_phyla <- sort(unique(relabu_phyla$Phylum))
+
+phyla_colors <- setNames(
+  colorRampPalette(brewer.pal(12, "Paired"))(length(all_phyla)),
+  all_phyla
+)
+
+# enforce same factor levels
+relabu_phyla$Phylum <- factor(relabu_phyla$Phylum, levels = all_phyla)
+
+
+# ---- Class colors (shared across ALL datasets)
+all_classes <- sort(unique(relabu_class$Class))
+
+
+#display.brewer.all()
+#Set3 and set 1 are looking good
+class_colors <- setNames(
+  colorRampPalette(brewer.pal(12, "Set1"))(length(all_classes)),
+  all_classes
+)
+
+relabu_class$Class <- factor(relabu_class$Class, levels = all_classes)
+
+
+### Subset datasets ---------------------------------------------------------
+
+relabu_phyla_FE <- relabu_phyla %>%
+  filter(Soil == "Substrate", Duration != "Zero-day")
+
+relabu_phyla_JKIS <- relabu_phyla %>%
+  filter(Soil == "Field soil", Duration != "Zero-day")
+
+
+relabu_class_FE <- relabu_class %>%
+  filter(Soil == "Substrate", Duration != "Zero-day")
+
+relabu_class_JKIS <- relabu_class %>%
+  filter(Soil == "Field soil", Duration != "Zero-day")
+
+
+### Consistent factor ordering ----------------------------------------------
+
+
+relabu_phyla_FE <- relabu_phyla_FE %>%
+  mutate(Treatment = as_factor(Treatment), 
+         Genotype = as_factor(Genotype),
+         Duration   = as_factor(Duration  ),
+         Treatment = fct_relevel(Treatment, "none", "mock", "C6-HSL"),
+         Genotype = fct_relevel(Genotype, "none","Golden_Promise", "BCC436") ,
+         Duration   = fct_relevel(Duration  , "Two-week-old","16-week-old"))
+
+relabu_phyla_JKIS <- relabu_phyla_JKIS %>%
+  mutate(Treatment = as_factor(Treatment), 
+         Genotype = as_factor(Genotype),
+         Duration   = as_factor(Duration  ),
+         Treatment = fct_relevel(Treatment, "none", "mock", "C6-HSL"),
+         Genotype = fct_relevel(Genotype, "none","Golden_Promise", "BCC436") ,
+         Duration   = fct_relevel(Duration  , "Three-week-old","18-week-old"))
+relabu_class_FE <- relabu_class_FE %>%
+  mutate(Treatment = as_factor(Treatment), 
+         Genotype = as_factor(Genotype),
+         Duration   = as_factor(Duration  ),
+         Treatment = fct_relevel(Treatment, "none", "mock", "C6-HSL"),
+         Genotype = fct_relevel(Genotype, "none","Golden_Promise", "BCC436") ,
+         Duration   = fct_relevel(Duration  , "Two-week-old","16-week-old"))
+
+relabu_class_JKIS <- relabu_class_JKIS %>%
+  mutate(Treatment = as_factor(Treatment), 
+         Genotype = as_factor(Genotype),
+         Duration   = as_factor(Duration  ),
+         Treatment = fct_relevel(Treatment, "none", "mock", "C6-HSL"),
+         Genotype = fct_relevel(Genotype, "none","Golden_Promise", "BCC436") ,
+         Duration   = fct_relevel(Duration  , "Three-week-old","18-week-old"))
+
+### RA Table ----------------------------------------------------------------
+
+
+relabu_phyla_FE
+relabu_phyla_JKIS 
+relabu_class_FE 
+relabu_class_JKIS 
+
+
+
+
+phylum_table_FE <- relabu_phyla_FE %>%
+  group_by(Phylum,Soil, Microhabitat, Duration, Genotype , Treatment) %>%
+  summarise(
+    mean_abundance = mean(Abundance, na.rm = TRUE),
+    sd_abundance   = sd(Abundance, na.rm = TRUE),
+    .groups = "drop"
+  ) 
+
+
+phylum_table_JKIS <- relabu_phyla_JKIS %>%
+  group_by(Phylum,Soil, Microhabitat, Duration, Genotype , Treatment) %>%
+  summarise(
+    mean_abundance = mean(Abundance, na.rm = TRUE),
+    sd_abundance   = sd(Abundance, na.rm = TRUE),
+    .groups = "drop"
+  ) 
+
+
+
+class_table_FE <- relabu_class_FE %>%
+  group_by(Class,Soil, Microhabitat, Duration, Genotype , Treatment) %>%
+  summarise(
+    mean_abundance = mean(Abundance, na.rm = TRUE),
+    sd_abundance   = sd(Abundance, na.rm = TRUE),
+    .groups = "drop"
+  ) 
+
+
+class_table_JKIS <- relabu_class_JKIS %>%
+  group_by(Class,Soil, Microhabitat, Duration, Genotype , Treatment) %>%
+  summarise(
+    mean_abundance = mean(Abundance, na.rm = TRUE),
+    sd_abundance   = sd(Abundance, na.rm = TRUE),
+    .groups = "drop"
+  ) 
+
+
+
+
+wb <- createWorkbook()
+
+addWorksheet(wb, "RA_phylum_substrate")
+writeData(wb, "RA_phylum_substrate", phylum_table_FE)
+
+addWorksheet(wb, "RA_phylum_field_soil")
+writeData(wb, "RA_phylum_field_soil", phylum_table_JKIS)
+
+addWorksheet(wb, "RA_class_substrate")
+writeData(wb, "RA_class_substrate", class_table_FE)
+
+addWorksheet(wb, "RA_class_field_soil")
+writeData(wb, "RA_class_field_soil", class_table_JKIS)
+
+
+# Speichern
+saveWorkbook(wb, file.path(out_dir, "RA/RA_table.xlsx"), overwrite = TRUE)
+
+### Plots -------------------------------------------------------------------
+# PHYLUM - SUBSTRATE
+
+p_phylum_FE <- ggplot(relabu_phyla_FE,
+                      aes(x = Number, y = Abundance, fill = Phylum)) +
+  geom_bar(stat = "identity", position = "fill", color = "black", linewidth = 0.1)+
+  facet_nested(~ Duration + Microhabitat + Genotype + Treatment,
+               scales = "free_x", space = "free",
+               labeller = labeller(Genotype = c("Golden_Promise" = "Golden Promise"))) +
+  labs(x = "", y = "Relative Abundance (%)", fill="Phylum") +
+  scale_fill_manual(values = phyla_colors) +
+  scale_y_continuous(labels = function(x) x * 100, expand = c(0,0)) +
+  theme(
+    plot.title=element_text(color="black",size = 10, hjust=0, vjust = 2, face= "bold"),
+    plot.title.position = "panel",
+    strip.text = element_text(size = 9#, face = "bold"
+    ),
+    strip.background = element_rect(fill = "white", color = "black", linewidth = 0.5),
+    strip.placement = "outside",
+    axis.text.x = element_blank(),
+    axis.title.x = element_blank(),
+    axis.title.y = element_text(size = 10, face = "plain"),  
+    legend.text = element_text(size = 10, face = "plain", colour = "black"),
+    axis.text.y = element_text(colour = "black", size = 7, face = "plain"))
+
+
+# PHYLUM - FIELD SOIL
+
+p_phylum_JKIS <- ggplot(relabu_phyla_JKIS,
+                      aes(x = Number, y = Abundance, fill = Phylum)) +
+  geom_bar(stat = "identity", position = "fill", color = "black", linewidth = 0.1)+
+  facet_nested(~ Duration + Microhabitat + Genotype + Treatment,
+               scales = "free_x", space = "free",
+               labeller = labeller(Genotype = c("Golden_Promise" = "Golden Promise"))) +
+  labs(x = "", y = "Relative Abundance (%)", fill="Phylum") +
+  scale_fill_manual(values = phyla_colors) +
+  scale_y_continuous(labels = function(x) x * 100, expand = c(0,0)) +
+  theme(
+    plot.title=element_text(color="black",size = 10, hjust=0, vjust = 2, face= "bold"),
+    plot.title.position = "panel",
+    strip.text = element_text(size = 9#, face = "bold"
+    ),
+    strip.background = element_rect(fill = "white", color = "black", linewidth = 0.5),
+    strip.placement = "outside",
+    axis.text.x = element_blank(),
+    axis.title.x = element_blank(),
+    axis.title.y = element_text(size = 10, face = "plain"),  
+    legend.text = element_text(size = 10, face = "plain", colour = "black"),
+    axis.text.y = element_text(colour = "black", size = 7, face = "plain"))
+
+
+# CLASS - SUBSTRATE
+
+p_class_FE <- ggplot(relabu_class_FE,
+                     aes(x = Number, y = Abundance, fill = Class)) +
+  geom_bar(stat = "identity", position = "fill", color = "black", linewidth = 0.1)+
+  facet_nested(~ Duration + Microhabitat + Genotype + Treatment,
+               scales = "free_x", space = "free",
+               labeller = labeller(Genotype = c("Golden_Promise" = "Golden Promise"))) +
+  labs(x = "", y = "Relative Abundance (%)", fill="Class") +
+  scale_fill_manual(values = class_colors) +
+  scale_y_continuous(labels = function(x) x * 100, expand = c(0,0)) +
+  theme(
+    plot.title=element_text(color="black",size = 10, hjust=0, vjust = 2, face= "bold"),
+    plot.title.position = "panel",
+    strip.text = element_text(size = 9#, face = "bold"
+    ),
+    strip.background = element_rect(fill = "white", color = "black", linewidth = 0.5),
+    strip.placement = "outside",
+    axis.text.x = element_blank(),
+    axis.title.x = element_blank(),
+    axis.title.y = element_text(size = 10, face = "plain"),  
+    legend.text = element_text(size = 10, face = "plain", colour = "black"),
+    axis.text.y = element_text(colour = "black", size = 7, face = "plain"))
+
+
+
+# CLASS - FIELD SOIL
+
+p_class_JKIS <- ggplot(relabu_class_JKIS,
+                      aes(x = Number, y = Abundance, fill = Class)) +
+  geom_bar(stat = "identity", position = "fill", color = "black", linewidth = 0.1)+
+  facet_nested(~ Duration + Microhabitat + Genotype + Treatment,
+               scales = "free_x", space = "free",
+               labeller = labeller(Genotype = c("Golden_Promise" = "Golden Promise"))) +
+  labs(x = "", y = "Relative Abundance (%)", fill="Class") +
+  scale_fill_manual(values = class_colors) +
+  scale_y_continuous(labels = function(x) x * 100, expand = c(0,0)) +
+  theme(
+    plot.title=element_text(color="black",size = 10, hjust=0, vjust = 2, face= "bold"),
+    plot.title.position = "panel",
+    strip.text = element_text(size = 9#, face = "bold"
+    ),
+    strip.background = element_rect(fill = "white", color = "black", linewidth = 0.5),
+    strip.placement = "outside",
+    axis.text.x = element_blank(),
+    axis.title.x = element_blank(),
+    axis.title.y = element_text(size = 10, face = "plain"),  
+    legend.text = element_text(size = 10, face = "plain", colour = "black"),
+    axis.text.y = element_text(colour = "black", size = 7, face = "plain"))
+
+
+
+### SAVE --------------------------------------------------------------------
+p_phylum_FE
+p_phylum_JKIS
+p_class_FE
+p_class_JKIS
+
+
+ggarrange(p_phylum_FE,p_phylum_JKIS   ,
+          common.legend = T,
+          legend = "bottom",
+          align = "hv")
+
+file_name <- paste0("RA/RA_phylum_both.png")
+
+ggsave(
+  filename = file_name,
+  plot = last_plot(),
+  width = 32,       # width in cm
+  height = 15,      # height in cm
+  units = "cm",     # specify centimeters
+  dpi = 300,
+  path = out_dir# resolution (300 dpi = publication quality)
+)
+
+ggarrange(p_class_FE,p_class_JKIS   ,
+          common.legend = T,
+          legend = "bottom",
+          align = "hv")
+
+file_name <- paste0("RA/RA_class_both.png")
+
+
+ggsave(
+  filename = file_name,
+  plot = last_plot(),
+  width = 32,       # width in cm
+  height = 25,      # height in cm
+  units = "cm",     # specify centimeters
+  dpi = 300,
+  path = out_dir# resolution (300 dpi = publication quality)
+)
+
+
+
+
+
+
+
+# UpSet plots -------------------------------------------------------------
+
+#with non-rarefied data set
+physeq
+rownames(tax_table(physeq))
+
+
+# --- Subset rhizosphere samples from each soil ---
+physeq_FE <- subset_samples(physeq, Soil == "Substrate" & Microhabitat == "RZ")
+physeq_JKI <- subset_samples(physeq, Soil == "Field soil" & Microhabitat == "RZ")
+
+# --- Remove taxa that are zero within each subset ---
+physeq_FE_sub <- prune_taxa(taxa_sums(physeq_FE) > 0, physeq_FE)
+physeq_JKI_sub <- prune_taxa(taxa_sums(physeq_JKI) > 0, physeq_JKI)
+
+
+# --- Extract OTUs per genotype ---
+phy_sub <- subset_samples(physeq_FE_sub, Genotype == "Golden_Promise")
+otus_GP_FE <- taxa_names(prune_taxa(taxa_sums(phy_sub) > 0, phy_sub))
+head(otus_GP_FE)
+
+phy_sub <- subset_samples(physeq_FE_sub, Genotype == "BCC436")
+otus_BCC_FE <- taxa_names(prune_taxa(taxa_sums(phy_sub) > 0, phy_sub))
+head(otus_BCC_FE)
+
+phy_sub <- subset_samples(physeq_JKI_sub, Genotype == "Golden_Promise")
+otus_GP_JKI <- taxa_names(prune_taxa(taxa_sums(phy_sub) > 0, phy_sub))
+head(otus_GP_JKI)
+
+phy_sub <- subset_samples(physeq_JKI_sub, Genotype == "BCC436")
+otus_BCC_JKI <- taxa_names(prune_taxa(taxa_sums(phy_sub) > 0, phy_sub))
+head(otus_BCC_JKI)
+
+
+otus_list <- list(
+  GP_substrate   = otus_GP_FE,
+  GP_field_soil  = otus_GP_JKI,
+  BCC_substrate  = otus_BCC_FE,
+  BCC_field_soil = otus_BCC_JKI
+)
+
+
+# --- Convert list to incidence matrix ---
+library(UpSetR)
+upset_input <- fromList(otus_list)
+rownames(upset_input)
+
+# --- Plot UpSet ---
+upset(
+  upset_input,
+  nsets = 4,
+  nintersects = NA,
+  order.by = "freq",
+  sets = c("GP_substrate", "GP_field_soil", "BCC_substrate", "BCC_field_soil"),
+  sets.bar.color = "grey30",
+  mainbar.y.label = "Shared ASVs",
+  sets.x.label = "ASV count per group",
+  text.scale = 1.2
+)
+
+library(dplyr)
+upset_tbl <- upset_input %>%
+  tibble::rownames_to_column("ASV")
+
+str(upset_tbl)
+
+tax <- as.data.frame(tax_table(physeq_raref))
+tax$ASV <- rownames(tax)
+
+shared_all_tax <- upset_tbl %>%
+  left_join(tax, by = c("ASV"))
+
+str(upset_input)
+
+upset_tbl <- upset_input %>%
+  as.data.frame() %>%
+  tibble::rownames_to_column("ASV")
+
+head(upset_tbl$ASV)
+
+
+
+all_asvs <- unique(unlist(otus_list))
+rownames(upset_input) <- all_asvs
+head(rownames(upset_input))
+
+library(tibble)
+
+upset_tbl <- upset_input %>%
+  tibble::rownames_to_column("ASV")
+
+tax <- as.data.frame(tax_table(physeq)) %>%
+  rownames_to_column("ASV")
+
+shared_tax <- upset_tbl %>%
+  left_join(tax, by = "ASV")
+str(shared_tax)
+
+BCC_shared_asv <- shared_tax %>%
+  filter(
+    BCC_substrate == 1,
+    BCC_field_soil == 1,
+    GP_substrate == 0,
+    GP_field_soil == 0
+  )
+str(BCC_shared_asv)
+
+
+
+
+GP_shared_asv <- shared_tax %>%
+  filter(
+    GP_substrate == 1,
+    GP_field_soil == 1,
+    BCC_substrate == 0,
+    BCC_field_soil == 0,
+  )
+str(GP_shared_asv)
+
+head(upset_tbl$ASV)
+head(rownames(tax_table(physeq)))
+# png(
+#   filename = file.path(out_dir, "UpSet/upset.png"),
+#   width = 22,
+#   height = 15,
+#   units = "cm",
+#   res = 300
+# )
+
+# upset(
+#   upset_input,
+#   nsets = 4,
+#   nintersects = NA,
+#   order.by = "freq",
+#   sets = c("GP_substrate", "GP_field_soil", "BCC_substrate", "BCC_field_soil"),
+#   sets.bar.color = "grey30",
+#   mainbar.y.label = "Shared ASVs",
+#   sets.x.label = "ASV count per group",
+#   text.scale = 1.2
+# )
+# 
+# dev.off()
+
+phy_sub <- subset_samples(physeq_JKI)
+otus_JKI_bulk <- taxa_names(prune_taxa(taxa_sums(physeq_JKI) > 0, phy_sub))
+
+phy_sub <- subset_samples(physeq_FE)
+otus_substrate_bulk <- taxa_names(prune_taxa(taxa_sums(physeq_FE) > 0, phy_sub))
+
+
+otus_list <- list(
+  substrate_bulk = otus_substrate_bulk,
+  field_soil_bulk = otus_JKI_bulk
+  
+)
+upset_input <- fromList(otus_list)
+
+
+
+upset(
+  upset_input,
+  nsets = 2,
+  nintersects = NA,
+  order.by = "freq",
+  sets = c(
+    "substrate_bulk", "field_soil_bulk" ),
+  sets.bar.color = "grey30",
+  mainbar.y.label = "Shared ASVs",
+  sets.x.label = "ASV count per group",
+  text.scale = 1.2
+)
+
+
+library(tibble)
+
+
+
+upset_tbl <- upset_input %>%
+  rownames_to_column("ASV")
+
+tax <- as.data.frame(tax_table(physeq)) %>%
+  rownames_to_column("ASV")
+
+shared_tax <- upset_tbl %>%
+  left_join(tax, by = "ASV")
+str(shared_tax)
+
+bulk_shared_asv <- shared_tax %>%
+  filter(
+    substrate_bulk == 1,
+    field_soil_bulk == 1
+  )
+str(bulk_shared_asv)
+
+
+bulk_shared_asv
+GP_shared_asv
+BCC_shared_asv
+
+
+shared_asv_bulk_rhizo <- Reduce(
+  intersect,
+  list(bulk_shared_asv$ASV, GP_shared_asv$ASV, BCC_shared_asv$ASV)
+)
+
+shared_asv_bulk_rhizo
+
+bulk_substrate_asv <- shared_tax %>%
+  filter(
+    substrate_bulk == 1,
+    field_soil_bulk == 0
+  )
+str(bulk_substrate_asv)
+
+bulk_field_soil_asv <- shared_tax %>%
+  filter(
+    substrate_bulk == 0,
+    field_soil_bulk == 1
+  )
+str(bulk_field_soil_asv)
+
+
+shared <- Reduce(
+  intersect,
+  list(bulk_shared_asv$ASV, GP_shared_asv$ASV, BCC_shared_asv$ASV)
+)
+
+shared_asv_bulk_rhizo
+
+
+
+
+
+
+
+
+# Convert list → incidence matrix
+library(UpSetR)
+
+
+#with rarefied phyloseq
+physeq_raref
+
+
+# Subset rhizosphere samples
+physeq_raref_FE <- subset_samples(physeq_raref, Soil == "Substrate")
+physeq_raref_FE_wo_bulk <- subset_samples(physeq_raref_FE, Microhabitat == "RZ")
+
+# Remove taxa that are zero *within the subset*
+physeq_raref_FE_wo_bulk_sub <- prune_taxa(
+  taxa_sums(physeq_raref_FE_wo_bulk) > 0,
+  physeq_raref_FE_wo_bulk
+)
+
+sum(taxa_sums(physeq_raref) > 0)
+# Subset rhizosphere samples
+physeq_raref_JKI <- subset_samples(physeq_raref, Soil == "Field soil")
+physeq_raref_JKI_wo_bulk <- subset_samples(physeq_raref_JKI, Microhabitat == "RZ")
+
+# Remove taxa that are zero *within the subset*
+physeq_raref_JKI_wo_bulk_sub <- prune_taxa(
+  taxa_sums(physeq_raref_JKI_wo_bulk) > 0,
+  physeq_raref_JKI_wo_bulk
+)
+
+phy_sub <- subset_samples(physeq_raref_FE_wo_bulk_sub, Genotype == "Golden_Promise")
+phy_sub <- prune_taxa(taxa_sums(phy_sub) > 0, phy_sub)
+otus_GP_FE <- taxa_names(phy_sub)
+
+phy_sub <- subset_samples(physeq_raref_FE_wo_bulk_sub, Genotype == "BCC436")
+phy_sub <- prune_taxa(taxa_sums(phy_sub) > 0, phy_sub)
+otus_BCC_FE <- taxa_names(phy_sub)
+
+phy_sub <- subset_samples(physeq_raref_JKI_wo_bulk_sub, Genotype == "Golden_Promise")
+phy_sub <- prune_taxa(taxa_sums(phy_sub) > 0, phy_sub)
+otus_GP_JKI <- taxa_names(phy_sub)
+
+phy_sub <- subset_samples(physeq_raref_JKI_wo_bulk_sub, Genotype == "BCC436")
+phy_sub <- prune_taxa(taxa_sums(phy_sub) > 0, phy_sub)
+otus_BCC_JKI <- taxa_names(phy_sub)
+
+otus_list <- list(
+  GP_FE   = otus_GP_FE,
+  GP_JKI  = otus_GP_JKI,
+  BCC_FE  = otus_BCC_FE,
+  BCC_JKI = otus_BCC_JKI
+)
+
+#install.packages("UpSetR")
+
+# Convert list → incidence matrix
+library(UpSetR)
+
+upset_input <- fromList(otus_list)
+
+
+
+upset(
+  upset_input,
+  nsets = 4,
+  nintersects = NA,
+  order.by = "freq",
+  sets = c("GP_FE", "GP_JKI", "BCC_FE", "BCC_JKI"),
+  sets.bar.color = "grey30",
+  mainbar.y.label = "Shared ASVs",
+  sets.x.label = "ASV count per group",
+  text.scale = 1.2
+)
+
+
+library(dplyr)
+
+upset_tbl <- upset_input %>%
+  tibble::rownames_to_column("ASV")
+
+head(upset_tbl)
+
+tax <- as.data.frame(tax_table(physeq_raref))
+tax$ASV <- rownames(tax)
+
+shared_all_tax <- upset_tbl %>%
+  left_join(tax, by = c("ASV"))
+
+str(upset_input)
+
+upset_tbl <- upset_input %>%
+  as.data.frame() %>%
+  tibble::rownames_to_column("ASV")
+
+head(upset_tbl$ASV)
+
+
+
+all_asvs <- unique(unlist(otus_list))
+rownames(upset_input) <- all_asvs
+head(rownames(upset_input))
+
+library(tibble)
+
+upset_tbl <- upset_input %>%
+  rownames_to_column("ASV")
+
+tax <- as.data.frame(tax_table(physeq_raref)) %>%
+  rownames_to_column("ASV")
+
+shared_tax <- upset_tbl %>%
+  left_join(tax, by = "ASV")
+str(shared_tax)
+
+core_asvs <- shared_tax %>%
+  filter(
+    GP_FE == 1,
+    GP_JKI == 1,
+    BCC_FE == 1,
+    BCC_JKI == 1
+  )
+str(core_asvs)
+
+
+core_asvs_BCC <- shared_tax %>%
+  filter(
+    GP_FE == 0,
+    GP_JKI == 0,
+    BCC_FE == 1,
+    BCC_JKI == 1
+  )
+str(core_asvs_BCC)
+
+core_asvs_GP <- shared_tax %>%
+  filter(
+    GP_FE == 1,
+    GP_JKI == 1,
+    BCC_FE == 0,
+    BCC_JKI == 0
+  )
+str(core_asvs_GP)
+
+
+
+library(dplyr)
+library(ggplot2)
+
+core_asvs %>%
+  count(Class, sort = TRUE) %>%
+  ggplot(aes(x = reorder(Class, n), y = n)) +
+  geom_col() +
+  coord_flip() +
+  theme_minimal() +
+  labs(x = "Class", y = "Number of core ASVs")
+
+core_asvs %>%
+  count(Genus, sort = TRUE) %>%
+  filter(n > 2) %>%
+  ggplot(aes(x = reorder(Genus, n), y = n)) +
+  geom_col() +
+  coord_flip()
+
+
+
+
+core_asvs_BCC %>%
+  count(Class, sort = TRUE) %>%
+  ggplot(aes(x = reorder(Class, n), y = n)) +
+  geom_col() +
+  coord_flip() +
+  theme_minimal() +
+  labs(x = "Class", y = "Number of core ASVs")
+
+core_asvs_GP %>%
+  count(Class, sort = TRUE) %>%
+  ggplot(aes(x = reorder(Class, n), y = n)) +
+  geom_col() +
+  coord_flip() +
+  theme_minimal() +
+  labs(x = "Class", y = "Number of core ASVs")
+
+
+
+#with non-rarefied data set
+physeq_raref
+
+# --- Subset rhizosphere samples from each soil ---
+physeq_FE <- subset_samples(physeq_raref, Soil == "Substrate" & Microhabitat == "RZ")
+physeq_JKI <- subset_samples(physeq_raref, Soil == "Field soil" & Microhabitat == "RZ")
+physeq_FE_bulk <- subset_samples(physeq_raref, Soil == "Substrate" & Microhabitat != "RZ")
+physeq_JKI_bulk <- subset_samples(physeq_raref, Soil == "Field soil" &  Microhabitat != "RZ")
+
+
+
+# --- Remove taxa that are zero within each subset ---
+physeq_FE_sub <- prune_taxa(taxa_sums(physeq_FE) > 0, physeq_FE)
+physeq_JKI_sub <- prune_taxa(taxa_sums(physeq_JKI) > 0, physeq_JKI)
+# CHECK: Die beiden Bulk-Objekte werden aus physeq_FE / physeq_JKI (Rhizosphäre) gebildet,
+#        nicht aus physeq_FE_bulk / physeq_JKI_bulk.
+physeq_FE_bulk_sub <- prune_taxa(taxa_sums(physeq_FE_bulk) > 0, physeq_FE)
+physeq_JKI_bulk_sub <- prune_taxa(taxa_sums(physeq_JKI_bulk) > 0, physeq_JKI)
+
+
+
+# --- Extract OTUs per genotype ---
+phy_sub <- subset_samples(physeq_FE_sub, Genotype == "Golden_Promise")
+otus_GP_FE <- taxa_names(prune_taxa(taxa_sums(phy_sub) > 0, phy_sub))
+
+phy_sub <- subset_samples(physeq_FE_sub, Genotype == "BCC436")
+otus_BCC_FE <- taxa_names(prune_taxa(taxa_sums(phy_sub) > 0, phy_sub))
+
+phy_sub <- subset_samples(physeq_JKI_sub, Genotype == "Golden_Promise")
+otus_GP_JKI <- taxa_names(prune_taxa(taxa_sums(phy_sub) > 0, phy_sub))
+
+phy_sub <- subset_samples(physeq_JKI_sub, Genotype == "BCC436")
+otus_BCC_JKI <- taxa_names(prune_taxa(taxa_sums(phy_sub) > 0, phy_sub))
+
+phy_sub <- subset_samples(physeq_JKI_bulk_sub)
+otus_JKI_bulk <- taxa_names(prune_taxa(taxa_sums(physeq_JKI_bulk_sub) > 0, phy_sub))
+
+phy_sub <- subset_samples(physeq_FE_bulk_sub)
+otus_substrate_bulk <- taxa_names(prune_taxa(taxa_sums(physeq_FE_bulk_sub) > 0, phy_sub))
+
+
+
+
+otus_list <- list(
+  GP_substrate   = otus_GP_FE,
+  GP_field_soil  = otus_GP_JKI,
+  BCC_substrate  = otus_BCC_FE,
+  BCC_field_soil = otus_BCC_JKI,
+  substrate_bulk = otus_substrate_bulk,
+  field_soil_bulk = otus_JKI_bulk
+  
+)
+
+upset_input <- fromList(otus_list)
+
+
+
+upset(
+  upset_input,
+  nsets = 8,
+  nintersects = NA,
+  order.by = "freq",
+  sets = c("GP_substrate", "GP_field_soil", 
+           "BCC_substrate", "BCC_field_soil",
+           "substrate_bulk", "field_soil_bulk" ),
+  sets.bar.color = "grey30",
+  mainbar.y.label = "Shared ASVs",
+  sets.x.label = "ASV count per group",
+  text.scale = 1.2
+)
+
+
+
+
+
+otus_list <- list(
+  substrate_bulk = otus_substrate_bulk,
+  field_soil_bulk = otus_JKI_bulk
+  
+)
+upset_input <- fromList(otus_list)
+
+
+
+upset(
+  upset_input,
+  nsets = 2,
+  nintersects = NA,
+  order.by = "freq",
+  sets = c(
+    "substrate_bulk", "field_soil_bulk" ),
+  sets.bar.color = "grey30",
+  mainbar.y.label = "Shared ASVs",
+  sets.x.label = "ASV count per group",
+  text.scale = 1.2
+)
+
+library(dplyr)
+
+upset_tbl <- upset_input %>%
+  tibble::rownames_to_column("ASV")
+
+head(upset_tbl)
+
+tax <- as.data.frame(tax_table(physeq_raref))
+tax$ASV <- rownames(tax)
+
+shared_all_tax <- upset_tbl %>%
+  left_join(tax, by = c("ASV"))
+
+str(upset_input)
+
+upset_tbl <- upset_input %>%
+  as.data.frame() %>%
+  tibble::rownames_to_column("ASV")
+
+head(upset_tbl$ASV)
+
+
+
+all_asvs <- unique(unlist(otus_list))
+rownames(upset_input) <- all_asvs
+head(rownames(upset_input))
+
+library(tibble)
+
+upset_tbl <- upset_input %>%
+  rownames_to_column("ASV")
+
+tax <- as.data.frame(tax_table(physeq_raref)) %>%
+  rownames_to_column("ASV")
+
+shared_tax <- upset_tbl %>%
+  left_join(tax, by = "ASV")
+str(shared_tax)
+
+bulk_shared_asv <- shared_tax %>%
+  filter(
+    substrate_bulk == 1,
+    field_soil_bulk == 1
+  )
+str(bulk_shared_asv)
+
+
+bulk_shared_asv
+core_asvs_GP
+core_asvs_BCC 
+
+
+
+shared_asvs <- Reduce(
+  intersect,
+  list(bulk_shared_asv$ASV, core_asvs_GP$ASV, core_asvs_BCC$ASV)
+)
+
+shared_asvs
 
 
